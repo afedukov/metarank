@@ -1,7 +1,7 @@
 package ai.metarank.fstore.codec.impl
 
 import ai.metarank.model.Field
-import ai.metarank.model.Field.{BooleanField, NumberField, NumberListField, StringField, StringListField}
+import ai.metarank.model.Field.{BooleanField, NumberField, NumberListField, StringField, StringListField, ScalarField}
 
 import java.io.{DataInput, DataOutput}
 
@@ -13,9 +13,9 @@ object FieldCodec extends BinaryCodec[Field] {
     case 3     => StringListField(in.readUTF(), (0 until in.readInt()).map(_ => in.readUTF()).toList)
     case 4     => NumberListField(in.readUTF(), (0 until in.readInt()).map(_ => in.readDouble()).toArray)
     case 5 =>
-      val name = in.readUTF()
-      val vecString = in.readUTF()
-      val vec = vecString.stripPrefix("SDoubleList(").stripSuffix(")").split(",").map(_.trim.toDouble)
+      val name   = in.readUTF()
+      val length = in.readInt()
+      val vec    = Array.fill(length)(in.readDouble())
       Field.ScalarField(name, ai.metarank.model.Scalar.SDoubleList(vec))
     case other => throw new Exception(s"cannot decode type index $other")
   }
@@ -43,9 +43,12 @@ object FieldCodec extends BinaryCodec[Field] {
       out.writeUTF(name)
       out.writeInt(value.length)
       value.foreach(out.writeDouble)
-    case Field.ScalarField(name, value) =>
+    case Field.ScalarField(name, ai.metarank.model.Scalar.SDoubleList(vec)) =>
       out.writeByte(5)
       out.writeUTF(name)
-      out.writeUTF(value.toString) // or use proper serialization later
+      out.writeInt(vec.length)
+      vec.foreach(out.writeDouble)
+    case Field.ScalarField(name, other) =>
+      throw new Exception(s"FieldCodec: unsupported scalar type $other in field '$name'")
   }
 }

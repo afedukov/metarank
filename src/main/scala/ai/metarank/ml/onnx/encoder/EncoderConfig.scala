@@ -54,13 +54,7 @@ object EncoderConfig {
       itemCache     <- c.downField("itemFieldCache").as[Option[String]]
       rankCache     <- c.downField("rankingFieldCache").as[Option[String]]
       dim           <- c.downField("dim").as[Int]
-      _ <- (model, itemCache, rankCache) match {
-        case (None, None, None) =>
-          Left(
-            DecodingFailure("one of model/itemFieldCache/rankingFieldCache should be present for bi-encoder", c.history)
-          )
-        case _ => Right({})
-      }
+      _ <- Right({})
     } yield {
       BiEncoderConfig(
         model,

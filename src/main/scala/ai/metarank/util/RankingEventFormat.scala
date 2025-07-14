@@ -1,7 +1,7 @@
 package ai.metarank.util
 
 import ai.metarank.model.Event.{RankItem, RankingEvent}
-import ai.metarank.model.Field.{BooleanField, NumberField, NumberListField, StringField, StringListField}
+import ai.metarank.model.Field.{BooleanField, NumberField, NumberListField, StringField, StringListField, ScalarField}
 import ai.metarank.model.Identifier.{ItemId, SessionId, UserId}
 import ai.metarank.model.{EventId, Field, Timestamp}
 import cats.data.NonEmptyList
@@ -84,7 +84,7 @@ object RankingEventFormat {
       stream.writeUTF(name)
       stream.writeInt(value.length)
       value.foreach(d => stream.writeDouble(d))
-    case Field.ScalarField(name, ai.metarank.model.Scalar.SDoubleList(value)) =>
+    case ScalarField(name, ai.metarank.model.Scalar.SDoubleList(value)) =>
       stream.writeByte(5)
       stream.writeUTF(name)
       stream.writeInt(value.length)
@@ -118,7 +118,7 @@ object RankingEventFormat {
       val name = stream.readUTF()
       val length = stream.readInt()
       val values = Array.fill(length)(stream.readDouble())
-      Field.ScalarField(name, ai.metarank.model.Scalar.SDoubleList(values))
+      ScalarField(name, ai.metarank.model.Scalar.SDoubleList(values))
     case 6 =>
       val name = stream.readUTF()
       val value = stream.readUTF()

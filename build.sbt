@@ -126,8 +126,7 @@ lazy val root = (project in file("."))
       }
     },
     docker / imageNames := Seq(
-      ImageName(s"andreyfedyukov/metarank:${version.value}"),
-      ImageName(s"andreyfedyukov/metarank:snapshot")
+      ImageName(s"andreyfedyukov/metarank:${version.value}")
     ),
     docker / buildOptions := BuildOptions(
       removeIntermediateContainers = BuildOptions.Remove.Always,

@@ -18,6 +18,7 @@ object Scalar {
       case SDoubleList(xvalue) => java.util.Arrays.equals(value, xvalue)
       case _                   => false
     }
+    override def hashCode(): Int = java.util.Arrays.hashCode(value)
   }
 
   object SDoubleList {

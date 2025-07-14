@@ -61,8 +61,8 @@ case class FieldMatchBiencoderFeature(
           field   <- e.fieldsMap.get(schema.itemField.field)
           encoded <- if (schema.preencoded) {
             field match {
-              case Field.ScalarField(_, SDoubleList(vec)) => Some(vec.map(_.toFloat))
-              case _                                       => None
+              case Field.ScalarField(_, SDoubleList(vec)) => Some(vec)                 // already Array[Double]
+              case _                                      => None
             }
           } else {
             val strOpt = field match {
@@ -70,9 +70,12 @@ case class FieldMatchBiencoderFeature(
               case StringListField(_, value) => Some(value.mkString(" "))
               case _                         => None
             }
-            strOpt.flatMap(str =>
-              itemCache.get(e.item.value).orElse(encoder.flatMap(_.embed(Array(str)).headOption))
-            )
+            strOpt.flatMap { str =>
+              itemCache
+                .get(e.item.value)
+                .orElse(encoder.flatMap(_.embed(Array(str)).headOption))
+                .map(_.map(_.toDouble))      // convert Array[Float] → Array[Double]
+            }
           }
         } yield Put(Key(ItemScope(e.item), conf.name), e.timestamp, SDoubleList(encoded))
       case _ => None

@@ -23,9 +23,10 @@ object Field {
 
   case class ScalarField(name: String, value: Scalar) extends Field {
     override def equals(obj: Any): Boolean = obj match {
-      case ScalarField(xname, xvalue) => (name == xname) && (value == xvalue)
+      case ScalarField(xname, xvalue) => name == xname && value == xvalue
       case _                          => false
     }
+    override def hashCode(): Int = java.util.Objects.hash(name, value)
   }
 
   object NumberListField {}
