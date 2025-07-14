@@ -21,6 +21,13 @@ object Field {
     }
   }
 
+  case class ScalarField(name: String, value: Scalar) extends Field {
+    override def equals(obj: Any): Boolean = obj match {
+      case ScalarField(xname, xvalue) => (name == xname) && (value == xvalue)
+      case _                          => false
+    }
+  }
+
   object NumberListField {}
 
   def toString(fields: List[Field]) = fields
@@ -30,6 +37,7 @@ object Field {
       case Field.NumberField(name, value)     => s"$name=$value"
       case Field.StringListField(name, value) => s"$name=${value.mkString(",")}"
       case Field.NumberListField(name, value) => s"$name=${value.mkString(",")}"
+      case Field.ScalarField(name, value)     => s"$name=$value"
     }
     .mkString("[", ", ", "]")
 
@@ -48,7 +56,7 @@ object Field {
         jsonArray = {
           case values if values.forall(_.isString) => Right(StringListField(name, values.flatMap(_.asString).toList))
           case values if values.forall(_.isNumber) =>
-            Right(NumberListField(name, values.flatMap(_.asNumber.map(_.toDouble)).toArray))
+            Right(ScalarField(name, Scalar.SDoubleList(values.flatMap(_.asNumber.map(_.toDouble)).toArray)))
           case other =>
             Left(DecodingFailure(s"cannot decode field $name: got list of $other", c.history))
         },
@@ -64,6 +72,7 @@ object Field {
   implicit val numEncoder: Encoder[NumberField]            = deriveEncoder
   implicit val stringListEncoder: Encoder[StringListField] = deriveEncoder
   implicit val numListEncoder: Encoder[NumberListField]    = deriveEncoder
+  implicit val scalarFieldEncoder: Encoder[ScalarField]    = deriveEncoder
 
   implicit val fieldEncoder: Encoder[Field] = Encoder.instance {
     case f: StringField     => stringEncoder.apply(f)
@@ -71,6 +80,7 @@ object Field {
     case f: NumberField     => numEncoder.apply(f)
     case f: StringListField => stringListEncoder.apply(f)
     case f: NumberListField => numListEncoder.apply(f)
+    case f: ScalarField     => scalarFieldEncoder.apply(f)
   }
 
   implicit val fieldCodec: Codec[Field] = Codec.from(fieldDecoder, fieldEncoder)

@@ -27,6 +27,7 @@ case class ItemFieldStat(
       case StringListField(name, values) =>
         values.foldLeft(this)((acc, value) => acc.refresh(StringField(name, value)))
       case n: NumberListField => refresh(n)
+      case s: ScalarField     => this
     }
   }
 

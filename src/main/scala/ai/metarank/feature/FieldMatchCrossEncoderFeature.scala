@@ -162,7 +162,7 @@ object FieldMatchCrossEncoderFeature extends Logging {
       method   <- c.downField("method").as[CrossEncoderConfig]
       distance <- c.downField("distance").as[Option[DistanceFunction]]
       refresh  <- c.downField("refresh").as[Option[FiniteDuration]]
-      ttl      <- c.downField("rrl").as[Option[FiniteDuration]]
+      ttl      <- c.downField("ttl").as[Option[FiniteDuration]]
       norm     <- c.downField("norm").as[Option[Normalize]]
     } yield {
       FieldMatchCrossEncoderSchema(

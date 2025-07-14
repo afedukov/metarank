@@ -16,6 +16,7 @@ import ai.metarank.model.Event.ItemEvent
 import ai.metarank.model.Feature.ScalarFeature.ScalarConfig
 import ai.metarank.model.FeatureValue.ScalarValue
 import ai.metarank.model.Field.{StringField, StringListField}
+import ai.metarank.model.Scalar
 import ai.metarank.model.FieldName.EventType.{Item, Ranking}
 import ai.metarank.model.{Event, Feature, FeatureSchema, FeatureValue, Field, FieldName, Key, MValue, ScopeType, Write}
 import ai.metarank.model.Key.FeatureName
@@ -57,20 +58,23 @@ case class FieldMatchBiencoderFeature(
     event match {
       case e: ItemEvent =>
         for {
-          field <- e.fieldsMap.get(schema.itemField.field)
-          string <- field match {
-            case Field.StringField(_, value)     => Some(value)
-            case Field.StringListField(_, value) => Some(value.mkString(" "))
-            case _                               => None
+          field   <- e.fieldsMap.get(schema.itemField.field)
+          encoded <- if (schema.preencoded) {
+            field match {
+              case Field.ScalarField(_, SDoubleList(vec)) => Some(vec.map(_.toFloat))
+              case _                                       => None
+            }
+          } else {
+            val strOpt = field match {
+              case StringField(_, value)     => Some(value)
+              case StringListField(_, value) => Some(value.mkString(" "))
+              case _                         => None
+            }
+            strOpt.flatMap(str =>
+              itemCache.get(e.item.value).orElse(encoder.flatMap(_.embed(Array(str)).headOption))
+            )
           }
-          encoded <- itemCache.get(e.item.value) match {
-            case cached @ Some(_) => cached
-            case None             => encoder.flatMap(_.embed(Array(string)).headOption)
-          }
-        } yield {
-          Put(Key(ItemScope(e.item), conf.name), e.timestamp, SDoubleList(encoded))
-        }
-
+        } yield Put(Key(ItemScope(e.item), conf.name), e.timestamp, SDoubleList(encoded))
       case _ => None
     }
   }
@@ -82,29 +86,30 @@ case class FieldMatchBiencoderFeature(
       features: Map[Key, FeatureValue],
       mode: BaseFeature.ValueMode
   ): List[MValue] = {
-    val queryOption = request.fieldsMap.get(schema.rankingField.field).collect {
-      case StringField(_, value)     => value
-      case StringListField(_, value) => value.mkString(" ")
+    val queryEmbeddingOption = request.fieldsMap.get(schema.rankingField.field) match {
+      case Some(f) if schema.preencoded =>
+        f match {
+          case Field.ScalarField(_, SDoubleList(vec)) => Some(vec.map(_.toFloat))
+          case _                                      => None
+        }
+      case Some(StringField(_, value)) if !schema.preencoded =>
+        rankingCache.get(value).orElse(encoder.flatMap(_.embed(Array(value)).headOption))
+      case Some(StringListField(_, value)) if !schema.preencoded =>
+        val txt = value.mkString(" ")
+        rankingCache.get(txt).orElse(encoder.flatMap(_.embed(Array(txt)).headOption))
+      case _ => None
     }
-    queryOption match {
-      case Some(queryString) =>
-        val queryEmbeddingOption = rankingCache.get(queryString) match {
-          case None             => encoder.flatMap(_.embed(Array(queryString)).headOption)
-          case cached @ Some(_) => cached
-        }
-        queryEmbeddingOption match {
-          case None => request.items.toList.map(_ => SingleValue.missing(schema.name))
-          case Some(queryEmbedding) =>
-            val raw = request.items.toList.map(item => {
-              features.get(Key(ItemScope(item.id), conf.name)) match {
-                case Some(ScalarValue(_, ts, SDoubleList(emb), _)) =>
-                  MValue(schema.name.value, schema.distance.dist(queryEmbedding, emb))
-                case _ => SingleValue.missing(schema.name)
-              }
-            })
-            schema.norm.scale(raw)
-        }
+    queryEmbeddingOption match {
       case None => request.items.toList.map(_ => SingleValue.missing(schema.name))
+      case Some(queryEmbedding) =>
+        val raw = request.items.toList.map(item => {
+          features.get(Key(ItemScope(item.id), conf.name)) match {
+            case Some(ScalarValue(_, ts, SDoubleList(emb), _)) =>
+              MValue(schema.name.value, schema.distance.dist(queryEmbedding, emb.map(_.toFloat)))
+            case _ => SingleValue.missing(schema.name)
+          }
+        })
+        schema.norm.scale(raw)
     }
   }
 }
@@ -119,7 +124,8 @@ object FieldMatchBiencoderFeature extends Logging {
       distance: DistanceFunction,
       norm: Normalize = NoopNormalize,
       refresh: Option[FiniteDuration] = None,
-      ttl: Option[FiniteDuration] = None
+      ttl: Option[FiniteDuration] = None,
+      preencoded: Boolean = false
   ) extends FeatureSchema {
     lazy val scope: ScopeType = ItemScopeType
 
@@ -159,11 +165,12 @@ object FieldMatchBiencoderFeature extends Logging {
           case ok @ FieldName(Item, _) => Right(ok)
           case other                   => Left(DecodingFailure(s"expected item field, but got $other", c.history))
         }
-        method   <- c.downField("method").as[BiEncoderConfig]
-        distance <- c.downField("distance").as[Option[DistanceFunction]]
-        refresh  <- c.downField("refresh").as[Option[FiniteDuration]]
-        ttl      <- c.downField("rrl").as[Option[FiniteDuration]]
-        norm     <- c.downField("norm").as[Option[Normalize]]
+        method     <- c.downField("method").as[BiEncoderConfig]
+        distance   <- c.downField("distance").as[Option[DistanceFunction]]
+        refresh    <- c.downField("refresh").as[Option[FiniteDuration]]
+        ttl        <- c.downField("ttl").as[Option[FiniteDuration]]
+        norm       <- c.downField("norm").as[Option[Normalize]]
+        preencoded <- c.downField("preencoded").as[Option[Boolean]]
       } yield {
         FieldMatchBiencoderSchema(
           name = name,
@@ -173,7 +180,8 @@ object FieldMatchBiencoderFeature extends Logging {
           distance = distance.getOrElse(CosineDistance),
           refresh = refresh,
           ttl = ttl,
-          norm = norm.getOrElse(NoopNormalize)
+          norm = norm.getOrElse(NoopNormalize),
+          preencoded = preencoded.getOrElse(false)
         )
       }
     )

@@ -84,6 +84,28 @@ object RankingEventFormat {
       stream.writeUTF(name)
       stream.writeInt(value.length)
       value.foreach(d => stream.writeDouble(d))
+    case Field.ScalarField(name, ai.metarank.model.Scalar.SDoubleList(value)) =>
+      stream.writeByte(5)
+      stream.writeUTF(name)
+      stream.writeInt(value.length)
+      value.foreach(stream.writeDouble)
+    case Field.ScalarField(name, ai.metarank.model.Scalar.SString(value)) =>
+      stream.writeByte(6)
+      stream.writeUTF(name)
+      stream.writeUTF(value)
+    case Field.ScalarField(name, ai.metarank.model.Scalar.SDouble(value)) =>
+      stream.writeByte(7)
+      stream.writeUTF(name)
+      stream.writeDouble(value)
+    case Field.ScalarField(name, ai.metarank.model.Scalar.SBoolean(value)) =>
+      stream.writeByte(8)
+      stream.writeUTF(name)
+      stream.writeBoolean(value)
+    case Field.ScalarField(name, ai.metarank.model.Scalar.SStringList(value)) =>
+      stream.writeByte(9)
+      stream.writeUTF(name)
+      stream.writeInt(value.length)
+      value.foreach(stream.writeUTF)
   }
 
   private def readField(stream: DataInputStream): Field = stream.readByte() match {
@@ -92,6 +114,27 @@ object RankingEventFormat {
     case 2 => NumberField(stream.readUTF(), stream.readDouble())
     case 3 => StringListField(stream.readUTF(), (0 until stream.readInt()).map(_ => stream.readUTF()).toList)
     case 4 => NumberListField(stream.readUTF(), (0 until stream.readInt()).map(_ => stream.readDouble()).toArray)
-
+    case 5 =>
+      val name = stream.readUTF()
+      val length = stream.readInt()
+      val values = Array.fill(length)(stream.readDouble())
+      Field.ScalarField(name, ai.metarank.model.Scalar.SDoubleList(values))
+    case 6 =>
+      val name = stream.readUTF()
+      val value = stream.readUTF()
+      Field.ScalarField(name, ai.metarank.model.Scalar.SString(value))
+    case 7 =>
+      val name = stream.readUTF()
+      val value = stream.readDouble()
+      Field.ScalarField(name, ai.metarank.model.Scalar.SDouble(value))
+    case 8 =>
+      val name = stream.readUTF()
+      val value = stream.readBoolean()
+      Field.ScalarField(name, ai.metarank.model.Scalar.SBoolean(value))
+    case 9 =>
+      val name = stream.readUTF()
+      val length = stream.readInt()
+      val values = List.fill(length)(stream.readUTF())
+      Field.ScalarField(name, ai.metarank.model.Scalar.SStringList(values))
   }
 }

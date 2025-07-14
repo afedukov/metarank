@@ -12,6 +12,11 @@ object FieldCodec extends BinaryCodec[Field] {
     case 2     => NumberField(in.readUTF(), in.readDouble())
     case 3     => StringListField(in.readUTF(), (0 until in.readInt()).map(_ => in.readUTF()).toList)
     case 4     => NumberListField(in.readUTF(), (0 until in.readInt()).map(_ => in.readDouble()).toArray)
+    case 5 =>
+      val name = in.readUTF()
+      val vecString = in.readUTF()
+      val vec = vecString.stripPrefix("SDoubleList(").stripSuffix(")").split(",").map(_.trim.toDouble)
+      Field.ScalarField(name, ai.metarank.model.Scalar.SDoubleList(vec))
     case other => throw new Exception(s"cannot decode type index $other")
   }
 
@@ -38,5 +43,9 @@ object FieldCodec extends BinaryCodec[Field] {
       out.writeUTF(name)
       out.writeInt(value.length)
       value.foreach(out.writeDouble)
+    case Field.ScalarField(name, value) =>
+      out.writeByte(5)
+      out.writeUTF(name)
+      out.writeUTF(value.toString) // or use proper serialization later
   }
 }
