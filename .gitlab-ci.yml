@@ -28,20 +28,13 @@ variables:
   CI_CD_TEMPLATE_REF_NAME: "main"
   APPLICATION: "metarank"
   WORK_DIR: ${CI_PROJECT_DIR}
-  CI_IMAGE__SCALA_SBT: "docker.io/hseeberger/scala-sbt:11.0.20_1.9.5_2.13.12"
+  CI_IMAGE__SCALA_SBT: "europe-docker.pkg.dev/metro-markets-cps-artifacts/docker-remote-dockerhub/hseeberger/scala-sbt:11.0.20_1.9.5_2.13.12"
   GAR_REGISTRY: "europe-docker.pkg.dev"
   GAR_PROJECT: "metro-markets-cps-artifacts"
   GAR_REPOSITORY: "docker-base"
   GAR_IMAGE_PATH: "mpdev/rnd/metarank/metarank"
   DOCKER_HOST: "tcp://docker:2375"
   IMAGE_TAG: "0.7.11-custom"
-
-# Run on default branch and on merge requests
-.rules:default-branch-or-mr:
-  rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-    - when: never
 
 values.yaml lint:
   rules:
