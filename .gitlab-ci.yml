@@ -30,7 +30,7 @@ variables:
   WORK_DIR: ${CI_PROJECT_DIR}
   GAR_REGISTRY: "europe-docker.pkg.dev"
   GAR_PROJECT: "metro-markets-cps-artifacts"
-  GAR_REPOSITORY: "docker-base"
+  GAR_REPOSITORY: "docker-stable"
   GAR_IMAGE_PATH: "mpdev/rnd/metarank/metarank"
   DOCKER_HOST: "tcp://docker:2375"
   IMAGE_TAG: "0.7.11-custom"
