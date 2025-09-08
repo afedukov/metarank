@@ -91,7 +91,8 @@ artifact:
 
       # Speed up Coursier/Ivy caches across runs (optional)
       export COURSIER_CACHE="${CI_PROJECT_DIR}/.cache/coursier"
-      export SBT_OPTS="${SBT_OPTS:-} -Dsbt.coursier.home=${COURSIER_CACHE}"
+      export SBT_OPTS="-Xms512m -Xmx3g -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8 -Dsbt.coursier.home=${COURSIER_CACHE}"
+      export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} -Xms256m -Xmx3g -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Dfile.encoding=UTF-8"
 
       # Align version tag and build fat jar
       sbt "set ThisBuild/version := \"${IMAGE_TAG}\"" +clean +assembly
