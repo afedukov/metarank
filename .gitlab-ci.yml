@@ -88,7 +88,6 @@ artifact:
       fi
       curl -fsSL https://raw.githubusercontent.com/paulp/sbt-extras/master/sbt -o /usr/local/bin/sbt
       chmod +x /usr/local/bin/sbt
-      sbt --version
 
       # Speed up Coursier/Ivy caches across runs (optional)
       export COURSIER_CACHE="${CI_PROJECT_DIR}/.cache/coursier"
