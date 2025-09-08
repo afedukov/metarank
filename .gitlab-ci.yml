@@ -66,31 +66,11 @@ artifact:
 
       echo "GAR_IMAGE=${GAR_IMAGE}"
 
-      # Resolve Scala/SBT image with fallbacks via company DockerHub proxy
-      CANDIDATES=()
-      if [[ -n "${CI_IMAGE__SCALA_SBT:-}" ]]; then
-        CANDIDATES+=("${CI_IMAGE__SCALA_SBT}")
-      fi
-      # Common proxies/tags (try these if explicit var not provided or missing)
-      CANDIDATES+=(
-        "europe-docker.pkg.dev/metro-markets-cps-artifacts/docker-remote-dockerhub/hseeberger/scala-sbt:11.0.19_1.9.9_2.13.12"
-        "europe-docker.pkg.dev/metro-markets-cps-artifacts/docker-remote-dockerhub/hseeberger/scala-sbt:11.0.20_1.9.5_2.13.12"
-        "europe-docker.pkg.dev/metro-markets-cps-artifacts/docker-remote-dockerhub/sbtscala/scala-sbt:1.9.9-java11"
-        "europe-docker.pkg.dev/metro-markets-cps-artifacts/docker-remote-dockerhub/sbtscala/scala-sbt:1.10.1-java11"
-      )
-      SBT_IMG=""
-      for img in "${CANDIDATES[@]}"; do
-        echo "Trying Scala/SBT image: ${img}"
-        if docker pull "${img}" >/dev/null 2>&1; then
-          SBT_IMG="${img}"
-          break
-        fi
-      done
-      if [[ -z "${SBT_IMG}" ]]; then
-        echo "ERROR: Could not pull any known scala-sbt image from the DockerHub proxy. Set CI_IMAGE__SCALA_SBT to a valid internal tag." >&2
+      if [[ -z "${CI_IMAGE__SCALA_SBT:-}" ]]; then
+        echo "ERROR: CI_IMAGE__SCALA_SBT is not set." >&2
         exit 1
       fi
-      echo "Using Scala/SBT image: ${SBT_IMG}"
+      SBT_IMG="${CI_IMAGE__SCALA_SBT}"
 
       # Optional: override version at runtime to keep tag in sync
       # If your build.sbt already pins version := "0.7.11-custom", this is a no-op.
