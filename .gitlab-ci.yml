@@ -57,17 +57,13 @@ artifact:
     - |
       set -euo pipefail
 
-      # Debug + fix .sbtopts if it contains raw JVM opts (must be -J- prefixed)
+      # Ignore project .sbtopts in CI to avoid stray JVM flags (-Xms, -XX:...) being parsed as sbt commands
       if [[ -f .sbtopts ]]; then
-        echo "Found .sbtopts. Contents BEFORE fix:"
-        sed -n '1,120p' .sbtopts || true
-        # Prefix JVM flags with -J if they are missing it (e.g., -Xms512m -> -J-Xms512m)
-        # Also normalize common HotSpot flags
-        sed -i -E 's/^([[:space:]]*)-X([[:alnum:]:+=.-]+)/\1-J-X\2/' .sbtopts
-        sed -i -E 's/^([[:space:]]*)-XX:([[:alnum:]:+=.-]+)/\1-J-XX:\2/' .sbtopts
-        sed -i -E 's/^([[:space:]]*)-D([[:alnum:]_.-]+=)/\1-J-D\2/' .sbtopts
-        echo "Contents AFTER fix:"
-        sed -n '1,120p' .sbtopts || true
+        echo "Found .sbtopts. Disabling it for CI to avoid arg parsing issues."
+        echo "----- .sbtopts (original) -----"
+        sed -n '1,200p' .sbtopts || true
+        mv .sbtopts .sbtopts.ci.bak
+        echo "Renamed to .sbtopts.ci.bak for this CI run."
       fi
 
       # Resolve GAR image coordinates (allow override of repository)
