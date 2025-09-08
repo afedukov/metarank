@@ -50,6 +50,10 @@ variables:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - when: never
 
+values.yaml lint:
+  rules:
+    - when: never
+
 artifact:
   stage: application:artifact
   image: ${CI_IMAGE__DOCKER}
