@@ -126,7 +126,7 @@ lazy val root = (project in file("."))
       }
     },
     docker / imageNames := Seq(
-      ImageName(s"andreyfedyukov/metarank:${version.value}")
+      ImageName(s"europe-docker.pkg.dev/metro-markets-cps-artifacts/docker-base/mpdev/rnd/metarank/metarank:${version.value}")
     ),
     docker / buildOptions := BuildOptions(
       removeIntermediateContainers = BuildOptions.Remove.Always,
