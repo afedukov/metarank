@@ -41,6 +41,8 @@ values.yaml lint:
 
 artifact:
   stage: application:artifact
+  tags:
+    - highmem-1
   image: ${CI_IMAGE__DOCKER}
   services:
     - name: ${CI_IMAGE__DOCKER_IN_DOCKER}
