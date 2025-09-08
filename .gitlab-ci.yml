@@ -57,6 +57,19 @@ artifact:
     - |
       set -euo pipefail
 
+      # Debug + fix .sbtopts if it contains raw JVM opts (must be -J- prefixed)
+      if [[ -f .sbtopts ]]; then
+        echo "Found .sbtopts. Contents BEFORE fix:"
+        sed -n '1,120p' .sbtopts || true
+        # Prefix JVM flags with -J if they are missing it (e.g., -Xms512m -> -J-Xms512m)
+        # Also normalize common HotSpot flags
+        sed -i -E 's/^([[:space:]]*)-X([[:alnum:]:+=.-]+)/\1-J-X\2/' .sbtopts
+        sed -i -E 's/^([[:space:]]*)-XX:([[:alnum:]:+=.-]+)/\1-J-XX:\2/' .sbtopts
+        sed -i -E 's/^([[:space:]]*)-D([[:alnum:]_.-]+=)/\1-J-D\2/' .sbtopts
+        echo "Contents AFTER fix:"
+        sed -n '1,120p' .sbtopts || true
+      fi
+
       # Resolve GAR image coordinates (allow override of repository)
       GAR_REPO="${GAR_REPOSITORY}"
       if [[ -n "${GAR_REPOSITORY_OVERRIDE:-}" ]]; then
