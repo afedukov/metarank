@@ -28,20 +28,13 @@ variables:
   CI_CD_TEMPLATE_REF_NAME: "main"
   APPLICATION: "metarank"
   WORK_DIR: ${CI_PROJECT_DIR}
-
-  # GAR coordinates (override via CI variables if needed)
+  CI_IMAGE__SCALA_SBT: "docker.io/hseeberger/scala-sbt:11.0.20_1.9.5_2.13.12"
   GAR_REGISTRY: "europe-docker.pkg.dev"
   GAR_PROJECT: "metro-markets-cps-artifacts"
-  # Default repo path under GAR project. If your policy requires docker-stable/snapshot,
-  # override GAR_REPOSITORY in CI variables accordingly.
   GAR_REPOSITORY: "docker-base"
   GAR_IMAGE_PATH: "mpdev/rnd/metarank/metarank"
-
-  # Tag must match build.sbt version (or we override version at runtime)
-  IMAGE_TAG: "0.7.11-custom"
-
-  # Docker-in-Docker
   DOCKER_HOST: "tcp://docker:2375"
+  IMAGE_TAG: "0.7.11-custom"
 
 # Run on default branch and on merge requests
 .rules:default-branch-or-mr:
@@ -65,7 +58,7 @@ artifact:
     GIT_DEPTH: 0
   extends:
     - .common_before
-    - .rules:default-branch-or-mr
+    - .rules:default-branch
   script:
     - |
       set -euo pipefail
@@ -80,9 +73,11 @@ artifact:
 
       echo "GAR_IMAGE=${GAR_IMAGE}"
 
-      # Build with sbt in container (so job image can be plain docker client)
-      # You can change the sbt image version if needed.
-      SBT_IMG="docker.io/hseeberger/scala-sbt:11.0.19_1.9.9_2.13.12"
+      if [[ -z "${CI_IMAGE__SCALA_SBT:-}" ]]; then
+        echo "ERROR: CI_IMAGE__SCALA_SBT is not set." >&2
+        exit 1
+      fi
+      SBT_IMG="${CI_IMAGE__SCALA_SBT}"
 
       # Optional: override version at runtime to keep tag in sync
       # If your build.sbt already pins version := "0.7.11-custom", this is a no-op.
