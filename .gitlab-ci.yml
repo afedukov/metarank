@@ -36,13 +36,6 @@ variables:
   DOCKER_HOST: "tcp://docker:2375"
   IMAGE_TAG: "0.7.11-custom"
 
-# Run on default branch and on merge requests
-.rules:default-branch-or-mr:
-  rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-    - when: never
-
 values.yaml lint:
   rules:
     - when: never
