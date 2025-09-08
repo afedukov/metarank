@@ -20,6 +20,8 @@ include:
           artifacts: true
 
 stages:
+  - state:notification
+  - application:code-quality
   - application:artifact
 
 variables:
