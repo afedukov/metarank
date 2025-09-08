@@ -1,0 +1,101 @@
+include:
+  - project: "mpdev/ci-cd-templates"
+    ref: "main"
+    file:
+      - "_default.yml"
+      - "/jobs/collect-state.yml"
+  - component: $CI_SERVER_FQDN/components/code-quality/license-scanner/license-scanner@~latest
+    inputs:
+      stage: "application:code-quality"
+      job_name: "license scan"
+      application_name: ${APPLICATION}
+      work_dir: "${CI_PROJECT_DIR}"
+      gitlab_token: ${GITLAB_COMPONENT_JOB}
+      extends:
+        - .common_cache
+        - .common_before
+        - .rules:default-branch-or-mr
+      needs:
+        - job: collect state
+          artifacts: true
+
+stages:
+  - state:notification
+  - application:code-quality
+  - application:artifact
+
+variables:
+  CI_CD_TEMPLATE_REF_NAME: "main"
+  APPLICATION: "metarank"
+  WORK_DIR: ${CI_PROJECT_DIR}
+  CI_IMAGE__SCALA_SBT: "docker.io/hseeberger/scala-sbt:11.0.20_1.9.5_2.13.12"
+  GAR_REGISTRY: "europe-docker.pkg.dev"
+  GAR_PROJECT: "metro-markets-cps-artifacts"
+  GAR_REPOSITORY: "docker-base"
+  GAR_IMAGE_PATH: "mpdev/rnd/metarank/metarank"
+  DOCKER_HOST: "tcp://docker:2375"
+  IMAGE_TAG: "0.7.11-custom"
+
+# Run on default branch and on merge requests
+.rules:default-branch-or-mr:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - when: never
+
+values.yaml lint:
+  rules:
+    - when: never
+
+artifact:
+  stage: application:artifact
+  image: ${CI_IMAGE__DOCKER}
+  services:
+    - name: ${CI_IMAGE__DOCKER_IN_DOCKER}
+      alias: docker
+      command: [ "--experimental" ]
+  variables:
+    GIT_DEPTH: 0
+  extends:
+    - .common_before
+    - .rules:default-branch
+  script:
+    - |
+      set -euo pipefail
+
+      # Select final GAR repo (optionally switch to stable/snapshot)
+      GAR_REPO="${GAR_REPOSITORY}"
+      if [[ -n "${GAR_REPOSITORY_OVERRIDE:-}" ]]; then
+        GAR_REPO="${GAR_REPOSITORY_OVERRIDE}"
+      fi
+      GAR_IMAGE_BASE="${GAR_REGISTRY}/${GAR_PROJECT}/${GAR_REPO}/${GAR_IMAGE_PATH}"
+      GAR_IMAGE="${GAR_IMAGE_BASE}:${IMAGE_TAG}"
+
+      echo "GAR_IMAGE=${GAR_IMAGE}"
+
+      if [[ -z "${CI_IMAGE__SCALA_SBT:-}" ]]; then
+        echo "ERROR: CI_IMAGE__SCALA_SBT is not set." >&2
+        exit 1
+      fi
+      SBT_IMG="${CI_IMAGE__SCALA_SBT}"
+
+      # Optional: override version at runtime to keep tag in sync
+      # If your build.sbt already pins version := "0.7.11-custom", this is a no-op.
+      docker run --rm -v "$PWD":/work -w /work "${SBT_IMG}" \
+        sbt "set ThisBuild/version := \"${IMAGE_TAG}\"" +clean +assembly
+
+      # Build Docker image via sbt native packager (uses local docker daemon)
+      # IMPORTANT: In build.sbt you should have:
+      # docker / imageNames := Seq(ImageName(s"${GAR_IMAGE_BASE}:${version.value}"))
+      docker run --rm -v "$PWD":/work -w /work -e DOCKER_HOST "${SBT_IMG}" \
+        sbt docker
+
+      # Double-check image exists locally and tag matches
+      docker images | grep -E "${GAR_PROJECT}.+${IMAGE_TAG}" || true
+
+      # Push to GAR
+      docker push "${GAR_IMAGE}"
+
+  needs:
+    - job: collect state
+      artifacts: true
