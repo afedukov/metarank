@@ -102,13 +102,18 @@ artifact:
 
       # Speed up Coursier/Ivy caches across runs (optional)
       export COURSIER_CACHE="${CI_PROJECT_DIR}/.cache/coursier"
-      export SBT_OPTS="-Xms512m -Xmx3g -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8 -Dsbt.coursier.home=${COURSIER_CACHE}"
-      export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} -Xms256m -Xmx3g -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Dfile.encoding=UTF-8"
+      # Do NOT use SBT_OPTS here — some launchers treat its contents as sbt commands.
+      # Rely on standard JAVA_TOOL_OPTIONS so JVM picks them up regardless of launcher.
+      export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} -Xms512m -Xmx3g -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8 -Dsbt.coursier.home=${COURSIER_CACHE}"
+      # Also neutralize a possible .jvmopts so it can't inject raw flags as args
+      if [[ -f .jvmopts ]]; then mv .jvmopts .jvmopts.ci.bak; fi
 
       # Align version tag and build fat jar
+      if [[ -f .sbtopts ]]; then mv .sbtopts .sbtopts.ci.bak || true; fi
       sbt "set ThisBuild/version := \"${IMAGE_TAG}\"" +clean +assembly
 
       # Build Docker image via sbt native packager (uses docker client available in this job container)
+      if [[ -f .sbtopts ]]; then mv .sbtopts .sbtopts.ci.bak || true; fi
       sbt docker
 
       # Double-check image exists locally and tag matches
