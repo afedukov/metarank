@@ -1,0 +1,195 @@
+#state:
+#  type: file
+#  path: /tmp/lmdb4/
+#  backend: mapdb
+#  type: redis
+#  host: localhost
+#  port: 6379
+#  format: binary
+#train:
+#  type: file
+#  path: /tmp/ctv
+#  format: binary
+
+core:
+  clickthrough:
+    maxSessionLength: 60s
+
+models:
+  similar:
+    type: als
+    interactions: [click]
+    factors: 100
+    iterations: 100
+
+  trending:
+    type: trending
+    weights:
+      - interaction: click
+        decay: 1.0
+        weight: 1.0
+
+  xgboost:
+    type: lambdamart
+    warmup:
+      sampleRequests: 100
+      duration: 1s
+    backend:
+      type: lightgbm
+      iterations: 500
+      ndcgCutoff: 10
+      seed: 0
+    weights:
+      click: 1
+    features:
+      - popularity
+      - vote_avg
+      - vote_cnt
+      - budget
+      - release_date
+      - runtime
+      - title_length
+      - genre
+      - ctr
+      - profile
+      - position
+      - divers_genres
+      - divers_actors
+      - divers_tags
+      - divers_year
+      - divers_popularity
+      - ctr_tag
+      - ctr_genre
+
+
+features:
+  - name: ctr_tag
+    type: rate
+    top: click
+    bottom: impression
+    bucket: 24h
+    periods: [7,30]
+    scope: item.tag
+
+  - name: ctr_genre
+    type: rate
+    top: click
+    bottom: impression
+    bucket: 24h
+    periods: [7,30]
+    scope: item.genre
+
+  - name: position
+    type: position
+    position: 5
+
+  - name: popularity
+    type: number
+    scope: item
+    source: metadata.popularity
+
+  - name: vote_avg
+    type: number
+    scope: item
+    source: metadata.vote_avg
+
+  - name: vote_cnt
+    type: number
+    scope: item
+    source: metadata.vote_cnt
+
+  - name: budget
+    type: number
+    scope: item
+    source: metadata.budget
+
+  - name: release_date
+    type: number
+    scope: item
+    source: metadata.release_date
+
+  - name: runtime
+    type: number
+    scope: item
+    source: metadata.runtime
+
+  - name: title_length
+    type: word_count
+    source: metadata.title
+    scope: item
+
+  - name: genre
+    type: string
+    scope: item
+    source: metadata.genres
+    encode: index
+    values:
+      - drama
+      - comedy
+      - thriller
+      - action
+      - adventure
+      - romance
+      - crime
+      - science fiction
+      - fantasy
+      - family
+      - horror
+      - mystery
+      - animation
+      - history
+      - music
+
+  - name: ctr
+    type: rate
+    top: click
+    bottom: impression
+    bucket: 24h
+    periods: [7,30]
+    normalize:
+      weight: 10
+
+  - name: profile
+    type: interacted_with
+    interaction: click
+    field: [item.genres, item.actors, item.tags, item.director]
+    scope: session
+    count: 100
+    duration: 24h
+
+  - name: divers_genres
+    type: diversity
+    source: item.genres
+
+  - name: divers_actors
+    type: diversity
+    source: item.actors
+
+  - name: divers_tags
+    type: diversity
+    source: item.tags
+
+  - name: divers_year
+    type: diversity
+    source: item.release_date
+
+  - name: divers_popularity
+    type: diversity
+    source: item.popularity
+
+  - name: visitor_click_count
+    type: interaction_count
+    interaction: click
+    scope: session
+
+  - name: global_item_click_count
+    type: interaction_count
+    interaction: click
+    scope: item
+
+  - name: day_item_click_count
+    type: window_count
+    interaction: click
+    scope: item
+    bucket: 24h
+    periods: [7,30]

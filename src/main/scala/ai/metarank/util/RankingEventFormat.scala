@@ -1,0 +1,140 @@
+package ai.metarank.util
+
+import ai.metarank.model.Event.{RankItem, RankingEvent}
+import ai.metarank.model.Field.{BooleanField, NumberField, NumberListField, StringField, StringListField, ScalarField}
+import ai.metarank.model.Identifier.{ItemId, SessionId, UserId}
+import ai.metarank.model.{EventId, Field, Timestamp}
+import cats.data.NonEmptyList
+
+import java.io.{DataInputStream, DataOutputStream}
+
+object RankingEventFormat {
+  def read(stream: DataInputStream): RankingEvent = {
+    val id = EventId(stream.readUTF())
+    val ts = Timestamp(stream.readLong())
+    val user = stream.readBoolean() match {
+      case true  => Some(UserId(stream.readUTF()))
+      case false => None
+    }
+    val session = stream.readBoolean() match {
+      case true  => Some(SessionId(stream.readUTF()))
+      case false => None
+    }
+    val fields = (0 until stream.readInt()).map(_ => readField(stream)).toList
+    val items = (0 until stream.readInt()).map(_ => {
+      RankItem(
+        id = ItemId(stream.readUTF()),
+        fields = (0 until stream.readInt()).map(_ => readField(stream)).toList
+      )
+    })
+    RankingEvent(
+      id = id,
+      timestamp = ts,
+      user = user,
+      session = session,
+      fields = fields,
+      items = NonEmptyList.fromListUnsafe(items.toList)
+    )
+  }
+  def write(request: RankingEvent, stream: DataOutputStream): Unit = {
+    stream.writeUTF(request.id.value)
+    stream.writeLong(request.timestamp.ts)
+    request.user match {
+      case Some(value) =>
+        stream.writeBoolean(true)
+        stream.writeUTF(value.value)
+      case None => stream.writeBoolean(false)
+    }
+    request.session match {
+      case Some(value) =>
+        stream.writeBoolean(true)
+        stream.writeUTF(value.value)
+      case None => stream.writeBoolean(false)
+    }
+    stream.writeInt(request.fields.size)
+    request.fields.foreach(f => writeField(f, stream))
+    stream.writeInt(request.items.size)
+    request.items.toList.foreach(item => {
+      stream.writeUTF(item.id.value)
+      stream.writeInt(item.fields.size)
+      item.fields.foreach(f => writeField(f, stream))
+    })
+  }
+
+  private def writeField(field: Field, stream: DataOutputStream): Unit = field match {
+    case Field.StringField(name, value) =>
+      stream.writeByte(0)
+      stream.writeUTF(name)
+      stream.writeUTF(value)
+    case Field.BooleanField(name, value) =>
+      stream.writeByte(1)
+      stream.writeUTF(name)
+      stream.writeBoolean(value)
+    case Field.NumberField(name, value) =>
+      stream.writeByte(2)
+      stream.writeUTF(name)
+      stream.writeDouble(value)
+    case Field.StringListField(name, value) =>
+      stream.writeByte(3)
+      stream.writeUTF(name)
+      stream.writeInt(value.size)
+      value.foreach(s => stream.writeUTF(s))
+    case Field.NumberListField(name, value) =>
+      stream.writeByte(4)
+      stream.writeUTF(name)
+      stream.writeInt(value.length)
+      value.foreach(d => stream.writeDouble(d))
+    case ScalarField(name, ai.metarank.model.Scalar.SDoubleList(value)) =>
+      stream.writeByte(5)
+      stream.writeUTF(name)
+      stream.writeInt(value.length)
+      value.foreach(stream.writeDouble)
+    case Field.ScalarField(name, ai.metarank.model.Scalar.SString(value)) =>
+      stream.writeByte(6)
+      stream.writeUTF(name)
+      stream.writeUTF(value)
+    case Field.ScalarField(name, ai.metarank.model.Scalar.SDouble(value)) =>
+      stream.writeByte(7)
+      stream.writeUTF(name)
+      stream.writeDouble(value)
+    case Field.ScalarField(name, ai.metarank.model.Scalar.SBoolean(value)) =>
+      stream.writeByte(8)
+      stream.writeUTF(name)
+      stream.writeBoolean(value)
+    case Field.ScalarField(name, ai.metarank.model.Scalar.SStringList(value)) =>
+      stream.writeByte(9)
+      stream.writeUTF(name)
+      stream.writeInt(value.length)
+      value.foreach(stream.writeUTF)
+  }
+
+  private def readField(stream: DataInputStream): Field = stream.readByte() match {
+    case 0 => StringField(stream.readUTF(), stream.readUTF())
+    case 1 => BooleanField(stream.readUTF(), stream.readBoolean())
+    case 2 => NumberField(stream.readUTF(), stream.readDouble())
+    case 3 => StringListField(stream.readUTF(), (0 until stream.readInt()).map(_ => stream.readUTF()).toList)
+    case 4 => NumberListField(stream.readUTF(), (0 until stream.readInt()).map(_ => stream.readDouble()).toArray)
+    case 5 =>
+      val name = stream.readUTF()
+      val length = stream.readInt()
+      val values = Array.fill(length)(stream.readDouble())
+      ScalarField(name, ai.metarank.model.Scalar.SDoubleList(values))
+    case 6 =>
+      val name = stream.readUTF()
+      val value = stream.readUTF()
+      Field.ScalarField(name, ai.metarank.model.Scalar.SString(value))
+    case 7 =>
+      val name = stream.readUTF()
+      val value = stream.readDouble()
+      Field.ScalarField(name, ai.metarank.model.Scalar.SDouble(value))
+    case 8 =>
+      val name = stream.readUTF()
+      val value = stream.readBoolean()
+      Field.ScalarField(name, ai.metarank.model.Scalar.SBoolean(value))
+    case 9 =>
+      val name = stream.readUTF()
+      val length = stream.readInt()
+      val values = List.fill(length)(stream.readUTF())
+      Field.ScalarField(name, ai.metarank.model.Scalar.SStringList(values))
+  }
+}

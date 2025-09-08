@@ -1,28 +1,11 @@
-<h1 align="center">
-    <a style="text-decoration: none" href="https://www.metarank.ai">
-      <img width="120" src="https://raw.githubusercontent.com/metarank/metarank/master/doc/img/logo.svg" />
-      <p align="center">Metarank: real time personalization as a service</p>
-    </a>
-</h1>
-<h2 align="center">
-  <a href="https://docs.metarank.ai">Docs</a> | <a href="https://metarank.ai">Website</a> | <a href="https://metarank.ai/slack">Community Slack</a> | <a href="https://blog.metarank.ai">Blog</a> | <a href="https://demo.metarank.ai">Demo</a>
-</h2>
-
-[![CI Status](https://github.com/metarank/metarank/workflows/Tests/badge.svg)](https://github.com/metarank/metarank/actions)
-[![License: Apache 2](https://img.shields.io/badge/License-Apache2-green.svg)](https://opensource.org/licenses/Apache-2.0)
-![Last commit](https://img.shields.io/github/last-commit/metarank/metarank)
-![Last release](https://img.shields.io/github/release/metarank/metarank)
-[![Join our slack](https://img.shields.io/badge/Slack-join%20the%20community-blue?logo=slack&style=social)](https://metarank.ai/slack)
-
-
 # What is Metarank?
 
-[Metarank](https://metarank.ai) is an open-source ranking service. It can help you to build a personalized semantic/neural search and recommendations.
+[Metarank](https://metarank.ai) is an open-source ranking service. It can help you to build a personalized semantic/neural search and recommendations. 
 
 If you just want to get started, try:
 * the [quickstart](https://docs.metarank.ai/introduction/quickstart) tutorial of implementing Learning-to-Rank on top of your search engine.
-* a [semantic search guide](TODO) of building an LLM-based neural search.
-* a [collaborative filtering recommendations guide](TODO) to create a "you may also like" widget as seen on many e-commerce stores.
+* a [guide on using cross-encoder LLM for search reranking](guide/search/cross-encoders.md) of building an LLM-based neural search.
+* a [Collaborative Filtering recommendations guide](TODO) to create a "you may also like" widget as seen on many e-commerce stores.
 
 ## Why Metarank?
 
@@ -62,16 +45,16 @@ Meetups and conference talks:
 ## Main features
 
 * Semantic neural search: [TODO]
-* Recommendations: [trending](doc/configuration/recommendations/trending.md) and [similar-items](configuration/recommendations/similar.md) (MF ALS).
-* Personalization: [secondary reranking](doc/quickstart/quickstart.md) (LambdaMART)
-* AutoML: [automatic feature generation](doc/howto/autofeature.md) and [model re-training](howto/model-retraining.md)
-* A/B testing: [multiple model serving](doc/configuration/overview.md#models)
+* Recommendations: [trending](configuration/recommendations/trending.md) and [similar-items](configuration/recommendations/similar.md) (MF ALS). 
+* Personalization: [secondary reranking](quickstart/quickstart.md) (LambdaMART)
+* AutoML: [automatic feature generation](howto/autofeature.md) and [model re-training](howto/model-retraining.md)
+* A/B testing: [multiple model serving](configuration/overview.md#models)
 
 ## Demo
 
 You can play with Metarank demo on [demo.metarank.ai](https://demo.metarank.ai):
 
-![Demo](doc/img/demo.gif)
+![Demo](./img/demo.gif)
 
 The demo itself and [the data used](https://github.com/metarank/msrd) are open-source and you can grab a copy of training events and config file [in the github repo](https://github.com/metarank/metarank/tree/master/src/test/resources/ranklens).
 
@@ -94,7 +77,6 @@ curl -O -L https://github.com/metarank/metarank/raw/master/src/test/resources/ra
 ### Step 2: Prepare configuration file
 
 We will again use the configuration file from our [Demo](https://demo.metarank.ai). It utilizes in-memory store, so no other dependencies are needed.
-
 
 ```bash
 curl -O -L https://raw.githubusercontent.com/metarank/metarank/master/src/test/resources/ranklens/config.yml
@@ -196,20 +178,8 @@ curl http://localhost:8080/rank/xgboost \
 # {"items":[{"item":"93363","score":2.2013986484185124},{"item":"72998","score":1.1542776301073876},{"item":"68358","score":0.9828904282341605},{"item":"112623","score":0.9521647429731446},{"item":"79132","score":0.9258841742518286},{"item":"77561","score":0.8990921381835769},{"item":"103228","score":0.8990921381835769},{"item":"94864","score":0.7131600718467729},{"item":"68791","score":0.624462038351694},{"item":"72378","score":0.5269765094008626},{"item":"85131","score":0.29198666089255343},{"item":"67197","score":0.16412780810560743}]}
 ```
 
-## Useful Links
-
-* [Documentation](https://docs.metarank.ai)
-* [Ranklens Dataset](https://github.com/metarank/ranklens)
-* [Contribution guide](CONTRIBUTING.md)
-* [License](LICENSE)
-
 ## What's next? 
 
-Check out a more in-depth [Quickstart](/doc/quickstart/quickstart.md) full [Reference](/doc/installation.md). 
+Check out a more in-depth [Quickstart](quickstart/quickstart.md) and full [Reference](installation.md). 
 
-If you have any questions, don't hesitate to join our [Slack](https://communityinviter.com/apps/metarank/metarank)!
-
-
-License
-=====
-This project is released under the Apache 2.0 license, as specified in the [License](LICENSE) file.
+If you have any questions, don't hesitate to join our [Slack](https://metarank.ai/slack)!

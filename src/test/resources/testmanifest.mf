@@ -1,0 +1,10 @@
+Manifest-Version: 1.0
+Main-Class: ai.metarank.main.Main
+Specification-Title: metarank
+Specification-Version: 0.5.7
+Specification-Vendor: ai.metarank
+Implementation-Title: metarank
+Implementation-Version: 0.5.7
+Implementation-Vendor: ai.metarank
+Implementation-Vendor-Id: ai.metarank
+

@@ -1,0 +1,58 @@
+name: Integration tests
+
+on:
+  push:
+    branches: [ master, 0.5.x ]
+  pull_request:
+    branches: [ master, 0.5.x ]
+env:
+  AWS_ACCESS_KEY_ID: foo
+  AWS_SECRET_ACCESS_KEY: bar
+  METARANK_TRACKING: false
+
+jobs:
+  build:
+    timeout-minutes: 20
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      matrix:
+        platform: [ubuntu-22.04]
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          lfs: 'true'
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.sbt ~/.m2 ~/.ivy2 ~/.cache
+          key: ${{ runner.os }}-build-${{ hashFiles('build.sbt', 'api/build.sbt', 'ingest/build.sbt', 'core/build.sbt', 'project/Deps.scala') }}
+      - name: Set up JDK
+        uses: actions/setup-java@v1
+        with:
+          distribution: 'adopt-hotspot'
+          java-version: '11'
+
+      - name: Generate TLS certificates
+        run: mkdir -p .github/tls && .github/generate_keys.sh .github/tls
+
+      - name:  Run docker-compose
+        run: docker compose -f .github/compose-connectors.yaml up -d
+
+      - name: Run integration tests
+        run: sbt -mem 5000 IntegrationTest/test
+
+      - name:  Stop docker-compose
+        run: docker compose -f .github/compose-connectors.yaml down
+
+      - name: Make docker image
+        run: sbt -mem 5000 assembly docker
+
+      - name: Run docker image tests
+        run: .github/test_docker.sh
+
+      - name: Run java version test
+        run: .github/test_java_version.sh
+
+      - name: Run quickstart test
+        run: ./run_quickstart.sh target/scala-2.13/metarank.jar

@@ -1,0 +1,179 @@
+# This is a sample config file that you can use as a reference for building your own.
+
+# Check https://docs.metarank.ai/reference/overview for detailed configuration overview
+
+# The "features" section describes how to map your input events into ML features that Metarank understands.
+# See https://docs.metarank.ai/reference/overview/feature-extractors feature configuration.
+
+# These features can be shared between multiple models, so if you have a model A using features 1-2-3 and
+# a model B using features 1-2, then all three features will be computed only once. 
+# You need to explicitly include a feature in the model configuration for Metarank to use it.
+features:
+  - name: popularity
+    type: number
+    scope: item
+    source: item.popularity
+    # TTL and refresh fields are part of every feature extractor that Metarank supports.
+    # The purpose of TTL is to configure data retention period, so in a case when there were no
+    # feature updates for a long time, it will eventually be dropped.
+    ttl: 60d
+    # Refresh parameter is used to downsample the amount of feature updates emitted. For example,
+    # there is a window_counter feature extractor, which can be used to count a number of clicks that happened for
+    # an item. Incrementing such a counter for a single day is an extremely lightweight operation, but computing
+    # window sums is not. As it's not always required to receive up-to-date counter values in ML models,
+    # these window sums can be updated only eventually (like once per hour), which improves the throughput a lot
+    # (but results in a slightly stale data during the inference process)
+    refresh: 1h
+
+  - name: genre
+    type: string
+    scope: item
+    source: item.genres
+    values:
+      - drama
+      - comedy
+      - thriller
+
+# The "models" section describes machine learning models used for personalization.
+# Check https://docs.metarank.ai/reference/overview/supported-ranking-models for more information.
+models:
+  default: # name of the model, used in the inference process as a part of path, like /rank/default
+    type: lambdamart # model type
+    backend:
+      type: xgboost # supported values: xgboost, lightgbm for lambdamart model
+      iterations: 100 # optional (default 100), number of interactions while training the model
+      seed: 0 # optional (default = random), a seed to make training deterministic
+    weights: # types and weights of interactions used in the model training
+      click: 1 # you can increase the weight of some events to hint model to optimize more for them
+    features: # features from the previous section used in the model
+      - popularity
+      - genre
+  # You can specify several models at once. 
+  # This can be useful for A/B test scenarios or while testing different sets of features.
+
+  #random:
+  #  type: shuffle # shuffle model type produces random results
+  #  maxPositionChange: 5 # controls the amount of randomness that shuffle can introduce in the original ranking
+
+  # The noop model does nothing with the original ranking and returns results "as is"
+  #noop:
+  #  type: noop
+
+# The "state" section describes how computed features and models are stored.
+# Check https://docs.metarank.ai/reference/overview/persistence for more information.
+state: # a place to store the feature values for the ML inference and the trained model
+    # Local memory
+    # A node-local in-memory storage without any persistence. 
+    # Feature values and the trained model is stored in-memory.
+    # Suitable only for local testing, as in case of a restart it will loose all the data.
+    type: memory
+
+    # Remote redis, with persistence. 
+    # Saves the computed features and trained model in a Redis instance.
+    # You can use remote or local Redis installation.
+    #type: redis
+    #host: localhost
+    #port: 6369
+    #format: binary # optional, default=binary, possible values: json, binary
+    
+    # Metarank implements several optimization strategies when using Redis: caching and pipelining
+    # Check https://docs.metarank.ai/reference/overview/persistence#redis-persistence for more details
+    #cache:           # optional
+    #  maxSize: 4096  # size of in-memory client-side cache for hot keys, optional, default=4096
+    #  ttl: 1h        # how long should key-values should be cached, optional, default=1h
+
+    #pipeline:         # optional
+    #  maxSize: 128    # batch write buffer size, optional, default=128
+    #  flushPeriod: 1s # buffer flush interval, optional, default=1s
+
+    # can be also overridden from environment variables, see the
+    # https://docs.metarank.ai/reference/overview/persistence#redis-persistence for details
+    #auth:                  # optional
+    #  user: <username>     # optional when Redis ACL is disabled
+    #  password: <password> # required if Redis server is run with requirepass argument
+
+
+    #tls: # optional, defaults to disabled
+    #  enabled: true        # optional, defaults to false
+    #  ca: <path/to/ca.crt> # optional path to the CA used to generate the cert, defaults to the default keychain
+    #  verify: full         # optional, default=full, possible values: full, ca, off
+    #  # full - verify both certificate and hostname
+    #  # ca   - verify only certificate
+    #  # off  - skip verification
+
+    #timeout:      # optional, defaults to 1s for all sub-timeouts
+    #  connect: 1s # optional, defaults to 1s
+    #  socket: 1s  # optional, defaults to 1s
+    #  command: 1s # optional, defaults to 1s
+
+# The optional train section describes how Metarank deals with the training dataset persistence.
+# By default, it uses the same way of storing click-through events as set in the state block.
+# train:
+#  type: redis
+
+  # Possible values are:
+  # - redis: with the same options as the state.redis persistence block.
+  # - memory: stores everything in memory
+  # - file: dump clickthroughs to the file
+  # - discard: drop all click-through events to /dev/null
+
+  # An example file configuration, for a case when you import+train everything locally, but with a remote Redis to store
+  # the state for the inference:
+
+  # type: file
+  # path: /path/to/file   # path to a file which will be written during import, and read during training
+  # format: json          # options are: json, binary
+
+# The "source" section describes the source of the data. This parameter is optional.
+# Check https://docs.metarank.ai/reference/overview/data-sources for more information
+source:
+  type: file # source type, available options: file, kafka, pulsar, kinesis
+  #path: /home/user/ranklens/events/ # path to events file, alternatively you can use CLI to provide file location
+  #offset: earliest|latest|ts=<unixtime>|last=<duration> #default: earliest
+  #format: <json|snowplow:tsv|snowplow:json> # file format, default: json
+
+  # Check https://docs.metarank.ai/reference/overview/data-sources#apache-kafka for more information
+  #type: kafka
+  #brokers: [broker1, broker2]
+  #topic: events
+  #groupId: metarank
+  #offset: earliest|latest|ts=<unixtime>|last=<duration>
+  #format: <json|snowplow:tsv|snowplow:json>
+
+  # Check https://docs.metarank.ai/reference/overview/data-sources#apache-pulsar for more information
+  #type: pulsar
+  #serviceUrl: <pulsar service URL>
+  #adminUrl: <pulsar service HTTP admin URL>
+  #topic: events
+  #subscriptionName: metarank
+  #subscriptionType: exclusive # options are exclusive, shared, failover
+  #offset: earliest|latest|ts=<unixtime>|last=<duration>
+  #format: <json|snowplow:tsv|snowplow:json>
+
+  # Check https://docs.metarank.ai/reference/overview/data-sources#aws-kinesis-streams for more information
+  #type: kinesis
+  #region: us-east-1
+  #topic: events
+  #offset: earliest|latest|ts=<unixtime>|last=<duration>
+  #format: <json|snowplow:tsv|snowplow:json>
+
+# The "api" section describes the Metarank API configuration.
+# Check https://docs.metarank.ai/reference/overview#api-options for more information.
+# This section is optional and by default uses the following parameters
+api:
+  port: 8080 # optional, default 8080
+  host: "0.0.0.0" # optional, default 0.0.0.0
+
+core:
+
+  # How rankings and interactions are joined into click-throughs.
+  clickthrough:
+    maxParallelSessions: 10000 # how many active sessions may happen within a `maxSessionLength` period
+
+    maxSessionLength: 30m # after which period of inactivity session is considered finalized
+                          # default = 30m (to be consistent with Google Analytics)
+
+  # Anonymous usage reporting. It is very helpful to us, so please leave this enabled.
+  tracking:
+    analytics: true
+    errors: true
