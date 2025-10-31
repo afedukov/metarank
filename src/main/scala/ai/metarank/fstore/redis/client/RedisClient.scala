@@ -118,10 +118,14 @@ case class RedisClient(
     IO(writer.append(key, value).toCompletableFuture).flatMap(x => maybeFlush(() => x))
 
   def maybeFlush[T](lastWrite: () => CompletableFuture[T]): IO[Unit] =
-    bufferSize.updateAndGet(_ + 1).flatMap {
-      case cnt if cnt >= conf.maxSize =>
-        IO.whenA(conf.enabled)(debug(s"overflow pipeline flush of $cnt writes")) *> doFlush(lastWrite)
-      case _ => IO.unit
+    if (conf.enabled) {
+      bufferSize.updateAndGet(_ + 1).flatMap {
+        case cnt if cnt >= conf.maxSize =>
+          debug(s"overflow pipeline flush of $cnt writes") *> doFlush(lastWrite)
+        case _ => IO.unit
+      }
+    } else {
+      IO.fromCompletableFuture(IO(lastWrite())).void
     }
 
   def doFlush[T](last: () => CompletableFuture[T]): IO[Unit] = {
