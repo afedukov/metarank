@@ -16,8 +16,21 @@ case class RedisModelStore(client: RedisClient, prefix: String)(implicit kc: KCo
     bytesOption <- IO(value.save())
     _           <- info(s"serialized model ${value.name}, size=${bytesOption.map(_.length)}")
     _ <- bytesOption match {
-      case None        => IO.unit
-      case Some(bytes) => client.set(kc.encode(prefix, ModelName(value.name)), vc.encode(bytes), 9999.days)
+      case None => info(s"model ${value.name} returned no payload, skipping redis write")
+      case Some(bytes) =>
+        val key     = kc.encode(prefix, ModelName(value.name))
+        val payload = vc.encode(bytes)
+        for {
+          _ <- info(s"writing model ${value.name} to redis key=$key payloadSize=${payload.length}")
+          _ <- client
+            .set(key, payload, 9999.days)
+            .handleErrorWith(err =>
+              error(s"failed to persist model ${value.name} into redis key=$key: ${err.getMessage}", err).flatMap(_ =>
+                IO.raiseError[Unit](err)
+              )
+            )
+          _ <- info(s"model ${value.name} persisted into redis key=$key")
+        } yield ()
     }
   } yield {}
 
