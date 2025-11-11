@@ -40,12 +40,16 @@ case class KafkaSource(conf: KafkaInputConfig) extends EventSource with Logging 
             Some(Chunk.from(messages.events), cons)
           }
         )
-        .flatMap(record => Stream.emits(record).through(conf.format.parse))
-        .handleErrorWith { err =>
-          // If parse fails (bad JSON), skip chunk and continue. Offset will advance on next successful chunk.
-          Stream.eval(
-            warn(s"Parse error in Kafka chunk, skipping and continuing: ${err.getClass.getSimpleName}: ${err.getMessage}")
-          ) >> Stream.empty
+        .flatMap { record =>
+          Stream
+            .emits(record)
+            .through(conf.format.parse)
+            .handleErrorWith { err =>
+              // If parse fails (bad JSON), skip this record and continue. Stream will not die.
+              Stream.eval(
+                warn(s"Parse error in record, skipping: ${err.getClass.getSimpleName}: ${err.getMessage}")
+              ) >> Stream.empty
+            }
         }
         .evalTapChunk(_ => consumer.commitPending()) // Commit after successful chunk processing
     )
