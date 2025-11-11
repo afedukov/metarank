@@ -4,7 +4,7 @@ lazy val PLATFORM = Option(System.getenv("PLATFORM")).getOrElse("amd64")
 
 ThisBuild / organization := "ai.metarank"
 ThisBuild / scalaVersion := "2.13.16"
-ThisBuild / version      := "0.7.12-custom"
+ThisBuild / version      := "0.7.13-custom"
 
 lazy val root = (project in file("."))
   .enablePlugins(DockerPlugin)
