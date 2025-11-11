@@ -37,6 +37,15 @@ serviceAccount:
 
 podAnnotations: {}
 
+# Graceful shutdown configuration
+terminationGracePeriodSeconds: 60
+
+# PreStop hook to allow active requests to complete
+lifecycle:
+  preStop:
+    exec:
+      command: ["/bin/sh", "-c", "sleep 15"]
+
 podSecurityContext: {}
   # fsGroup: 2000
 

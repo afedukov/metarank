@@ -33,7 +33,7 @@ variables:
   GAR_REPOSITORY: "docker-stable"
   GAR_IMAGE_PATH: "mpdev/rnd/metarank/metarank"
   DOCKER_HOST: "tcp://docker:2375"
-  IMAGE_TAG: "0.7.12-custom"
+  IMAGE_TAG: "0.7.13-custom"
 
 values.yaml lint:
   rules:

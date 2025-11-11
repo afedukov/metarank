@@ -345,16 +345,22 @@ object LambdaMARTRanker extends Logging {
       with Logging
       with AutoCloseable {
     override def predict(request: QueryRequest): IO[Model.Response] = {
-      IO(booster.predictMat(request.query.values, request.query.rows, request.query.columns).toList).flatMap {
-        case head :: tail =>
-          for {
-            items <- IO(request.items.zip(NonEmptyList.of(head, tail: _*)).map { case (item, score) =>
-              ItemScore(item.id, score)
-            })
-          } yield {
-            Response(items)
-          }
-        case _ => IO.raiseError(new Exception("booster.predictMat returned empty array"))
+      if (booster.isClosed()) {
+        logger.warn(s"Attempt to predict with closed model: $name")
+        IO.raiseError(new Exception("Model has been closed, cannot predict"))
+      } else {
+        logger.trace(s"Predicting with model $name (isClosed=${booster.isClosed()})")
+        IO(booster.predictMat(request.query.values, request.query.rows, request.query.columns).toList).flatMap {
+          case head :: tail =>
+            for {
+              items <- IO(request.items.zip(NonEmptyList.of(head, tail: _*)).map { case (item, score) =>
+                ItemScore(item.id, score)
+              })
+            } yield {
+              Response(items)
+            }
+          case _ => IO.raiseError(new Exception("booster.predictMat returned empty array"))
+        }
       }
     }
 

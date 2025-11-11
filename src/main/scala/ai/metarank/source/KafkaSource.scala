@@ -5,7 +5,7 @@ import ai.metarank.model.{Event, Timestamp}
 import ai.metarank.source.KafkaSource.Consumer
 import ai.metarank.source.KafkaSource.Consumer.ConsumerOps
 import ai.metarank.util.Logging
-import cats.effect.IO
+import cats.effect.{IO, Ref}
 import com.google.common.collect.Lists
 import org.apache.kafka.clients.consumer.{
   ConsumerConfig,
@@ -23,21 +23,30 @@ import java.util
 import scala.jdk.CollectionConverters._
 import java.util.{Collections, Properties}
 
-case class KafkaSource(conf: KafkaInputConfig) extends EventSource {
+case class KafkaSource(conf: KafkaInputConfig) extends EventSource with Logging {
   val POLL_FREQUENCY = Duration.ofMillis(100)
   override def stream: Stream[IO, Event] = Stream
-    .bracket(Consumer.create(conf))(_.close())
+    .bracket(Consumer.create(conf))(consumer =>
+      consumer.commitPending() *> consumer.close() // Commit any pending offsets before closing
+    )
     .flatMap(consumer =>
       Stream
         .unfoldChunkEval[IO, Consumer, Array[Byte]](consumer)(cons =>
           for {
             messages <- cons.client.poll2(POLL_FREQUENCY)
-            _        <- cons.client.commit(messages.offsets)
+            _        <- cons.accumulateOffsets(messages.offsets) // Accumulate instead of immediate commit
           } yield {
             Some(Chunk.from(messages.events), cons)
           }
         )
         .flatMap(record => Stream.emits(record).through(conf.format.parse))
+        .handleErrorWith { err =>
+          // If parse fails (bad JSON), skip chunk and continue. Offset will advance on next successful chunk.
+          Stream.eval(
+            warn(s"Parse error in Kafka chunk, skipping and continuing: ${err.getClass.getSimpleName}: ${err.getMessage}")
+          ) >> Stream.empty
+        }
+        .evalTapChunk(_ => consumer.commitPending()) // Commit after successful chunk processing
     )
 }
 
@@ -45,12 +54,32 @@ object KafkaSource {
   val KAFKA_TIMEOUT = Duration.ofSeconds(10)
   case class Messages(events: List[Array[Byte]], offsets: Map[TopicPartition, OffsetAndMetadata])
 
-  case class Consumer(client: KafkaConsumer[Array[Byte], Array[Byte]]) {
+  case class Consumer(
+      client: KafkaConsumer[Array[Byte], Array[Byte]],
+      pendingOffsets: Ref[IO, Map[TopicPartition, OffsetAndMetadata]]
+  ) extends Logging {
     def close() = IO(client.close())
+
+    def accumulateOffsets(offsets: Map[TopicPartition, OffsetAndMetadata]): IO[Unit] =
+      if (offsets.nonEmpty) {
+        pendingOffsets.update(_ ++ offsets)
+      } else {
+        IO.unit
+      }
+
+    def commitPending(): IO[Unit] = for {
+      offsets <- pendingOffsets.getAndSet(Map.empty)
+      _ <- if (offsets.nonEmpty) {
+        client.commit(offsets) *>
+          info(s"committed ${offsets.size} partition offsets after successful processing")
+      } else {
+        IO.unit
+      }
+    } yield ()
   }
 
   object Consumer extends Logging {
-    def create(config: KafkaInputConfig) = {
+    def create(config: KafkaInputConfig): IO[Consumer] = {
       val props = new Properties()
       props.setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, config.brokers.toList.mkString(","))
       props.setProperty(ConsumerConfig.GROUP_ID_CONFIG, config.groupId)
@@ -63,8 +92,9 @@ object KafkaSource {
         _          <- info(s"discovered partitions: $partitions")
         _          <- IO(client.subscribe(config.topic, config.offset))
         _          <- IO(logger.info(s"subscribed to topic ${config.topic}"))
+        pendingOffsets <- Ref.of[IO, Map[TopicPartition, OffsetAndMetadata]](Map.empty)
       } yield {
-        new Consumer(client)
+        new Consumer(client, pendingOffsets)
       }
     }
 

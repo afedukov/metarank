@@ -37,7 +37,10 @@ object CachedModelStore extends Logging {
     .build[ModelName, Model[_]]()
 
   def disposeModel(key: ModelName, model: Model[_], reason: RemovalCause): Unit = {
-    logger.info(s"removing model $key due to $reason")
-    model.close()
+    val alreadyClosed = model.isClosed()
+    logger.info(s"removing model $key due to $reason (isClosed=$alreadyClosed)")
+    if (!alreadyClosed) {
+      model.close()
+    }
   }
 }

@@ -21,6 +21,7 @@ import ai.metarank.util.Logging
 import ai.metarank.util.analytics.Metrics
 import cats.effect.IO
 import cats.effect.kernel.Resource
+import cats.effect.syntax.spawn._
 import cats.implicits._
 import com.comcast.ip4s.{Hostname, Port}
 import io.prometheus.client.CollectorRegistry
@@ -36,6 +37,33 @@ import org.http4s.server.middleware.{ErrorAction, Logger}
 import scala.concurrent.duration._
 
 object Serve extends Logging {
+
+  // Supervisor pattern: automatically restart Kafka stream on failure with exponential backoff
+  def runWithSupervision(
+      store: Persistence,
+      source: EventSource,
+      mapping: FeatureMapping,
+      buffer: TrainBuffer,
+      consecutiveFailures: Int = 0
+  ): IO[Unit] = {
+    MetarankFlow
+      .process(store, source.stream, mapping, buffer)
+      .flatMap { result =>
+        info(s"Stream completed successfully: processed ${result.events} events in ${result.tookMillis}ms") *>
+        info("Restarting stream...") *>
+        runWithSupervision(store, source, mapping, buffer, consecutiveFailures = 0)
+      }
+      .handleErrorWith { err =>
+        val nextFailureCount = consecutiveFailures + 1
+        val backoffSeconds = Math.min(5 * nextFailureCount, 60) // 5s, 10s, 15s, ..., max 60s
+
+        error(s"Stream failed (consecutive failure #$nextFailureCount): ${err.getClass.getSimpleName}: ${err.getMessage}") *>
+        warn(s"Restarting Kafka consumer in ${backoffSeconds}s...") *>
+        IO.sleep(backoffSeconds.seconds) *>
+        runWithSupervision(store, source, mapping, buffer, nextFailureCount)
+      }
+  }
+
   def run(
       conf: Config,
       storeResource: Resource[IO, Persistence],
@@ -58,11 +86,10 @@ object Serve extends Logging {
             )
           case Some(sourceConfig) =>
             val source = EventSource.fromConfig(sourceConfig)
-            MetarankFlow
-              .process(store, source.stream, mapping, buffer)
+            runWithSupervision(store, source, mapping, buffer)
               .background
               .use(_ =>
-                info(s"started ${source.conf} source") *> api(store, cts, mapping, conf.api, buffer, conf.inference)
+                info(s"started ${source.conf} source with supervision") *> api(store, cts, mapping, conf.api, buffer, conf.inference)
               )
         }
       })
