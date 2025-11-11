@@ -5,7 +5,8 @@ import ai.metarank.model.{Event, Timestamp}
 import ai.metarank.source.KafkaSource.Consumer
 import ai.metarank.source.KafkaSource.Consumer.ConsumerOps
 import ai.metarank.util.Logging
-import cats.effect.{IO, Ref}
+import cats.effect.IO
+import java.util.concurrent.atomic.AtomicReference
 import com.google.common.collect.Lists
 import org.apache.kafka.clients.consumer.{
   ConsumerConfig,
@@ -39,14 +40,25 @@ case class KafkaSource(conf: KafkaInputConfig) extends EventSource with Logging 
             Some(Chunk.from(messages.events), cons)
           }
         )
-        .flatMap(record => Stream.emits(record).through(conf.format.parse))
-        .handleErrorWith { err =>
-          // If parse fails (bad JSON), skip chunk and continue. Offset will advance on next successful chunk.
-          Stream.eval(
-            warn(s"Parse error in Kafka chunk, skipping and continuing: ${err.getClass.getSimpleName}: ${err.getMessage}")
-          ) >> Stream.empty
+        .chunks // Restore chunk boundaries (one chunk = one poll batch)
+        .flatMap { ch =>
+          val parsed =
+            Stream
+              .chunk(ch) // ch: Chunk[Array[Byte]] from poll
+              .flatMap { rec =>
+                Stream
+                  .emits(rec)
+                  .through(conf.format.parse)
+                  .handleErrorWith { err =>
+                    // If parse fails (bad JSON), skip this record and continue. Stream will not die.
+                    Stream.eval(
+                      warn(s"Parse error in record, skipping: ${err.getClass.getSimpleName}: ${err.getMessage}")
+                    ) >> Stream.empty
+                  }
+              }
+          // Commit offsets after processing ENTIRE poll batch (poison pill protection + no early commit)
+          parsed.onFinalizeWeak(consumer.commitPending())
         }
-        .evalTapChunk(_ => consumer.commitPending()) // Commit after successful chunk processing
     )
 }
 
@@ -56,19 +68,24 @@ object KafkaSource {
 
   case class Consumer(
       client: KafkaConsumer[Array[Byte], Array[Byte]],
-      pendingOffsets: Ref[IO, Map[TopicPartition, OffsetAndMetadata]]
+      pendingOffsets: AtomicReference[Map[TopicPartition, OffsetAndMetadata]]
   ) extends Logging {
-    def close() = IO(client.close())
+    def close(): IO[Unit] = IO.blocking(client.close())
 
     def accumulateOffsets(offsets: Map[TopicPartition, OffsetAndMetadata]): IO[Unit] =
       if (offsets.nonEmpty) {
-        pendingOffsets.update(_ ++ offsets)
+        IO {
+          var current = pendingOffsets.get()
+          while (!pendingOffsets.compareAndSet(current, current ++ offsets)) {
+            current = pendingOffsets.get()
+          }
+        }
       } else {
         IO.unit
       }
 
     def commitPending(): IO[Unit] = for {
-      offsets <- pendingOffsets.getAndSet(Map.empty)
+      offsets <- IO(pendingOffsets.getAndSet(Map.empty))
       _ <- if (offsets.nonEmpty) {
         client.commit(offsets) *>
           info(s"committed ${offsets.size} partition offsets after successful processing")
@@ -76,6 +93,21 @@ object KafkaSource {
         IO.unit
       }
     } yield ()
+
+    // Synchronous commit for rebalance callback (called from Kafka thread)
+    def commitPendingSync(): Unit = {
+      val offsets = pendingOffsets.getAndSet(Map.empty)
+      if (offsets.nonEmpty) {
+        try {
+          logger.info(s"rebalance: committing ${offsets.size} partition offsets synchronously")
+          client.commitSync(offsets.asJava, KAFKA_TIMEOUT)
+          logger.info("rebalance: commit completed")
+        } catch {
+          case e: Exception =>
+            logger.error(s"rebalance: commitSync failed: ${e.getMessage}", e)
+        }
+      }
+    }
   }
 
   object Consumer extends Logging {
@@ -88,23 +120,26 @@ object KafkaSource {
         client     <- IO(new KafkaConsumer(props, new ByteArrayDeserializer(), new ByteArrayDeserializer()))
         _          <- IO(logger.info(s"created kafka consumer, broker=${config.brokers} group=${config.groupId}"))
         _          <- IO.whenA(config.options.nonEmpty)(info(s"kafka conf overrides: ${config.options}"))
+        pendingOffsets = new AtomicReference[Map[TopicPartition, OffsetAndMetadata]](Map.empty)
+        consumer   = new Consumer(client, pendingOffsets)
         partitions <- client.partitions(config.topic)
         _          <- info(s"discovered partitions: $partitions")
-        _          <- IO(client.subscribe(config.topic, config.offset))
+        _          <- IO(client.subscribe(config.topic, config.offset, consumer))
         _          <- IO(logger.info(s"subscribed to topic ${config.topic}"))
-        pendingOffsets <- Ref.of[IO, Map[TopicPartition, OffsetAndMetadata]](Map.empty)
       } yield {
-        new Consumer(client, pendingOffsets)
+        consumer
       }
     }
 
     implicit class ConsumerOps(client: KafkaConsumer[Array[Byte], Array[Byte]]) {
-      def subscribe(topic: String, offset: Option[SourceOffset]): Unit =
+      def subscribe(topic: String, offset: Option[SourceOffset], consumer: Consumer): Unit =
         client.subscribe(
           Collections.singleton(topic),
           new ConsumerRebalanceListener {
             override def onPartitionsRevoked(partitions: util.Collection[TopicPartition]): Unit = {
               logger.info(s"partitions $partitions were revoked")
+              // Commit pending offsets before rebalance to avoid duplicates
+              consumer.commitPendingSync()
             }
 
             override def onPartitionsAssigned(partitions: util.Collection[TopicPartition]): Unit = {
@@ -147,7 +182,7 @@ object KafkaSource {
         client
           .offsetsForTimes(timestamps, KAFKA_TIMEOUT)
           .asScala
-          .map { case (tp, om) => tp -> om.offset().longValue }
+          .flatMap { case (tp, om) => Option(om).map(m => tp -> m.offset().longValue()) }
           .toMap
       }
 
@@ -167,7 +202,7 @@ object KafkaSource {
       } yield {
         val events = messages.asScala.map(_.value()).toList
         val offsets = messages.asScala
-          .map(m => new TopicPartition(m.topic(), m.partition()) -> new OffsetAndMetadata(m.offset()))
+          .map(m => new TopicPartition(m.topic(), m.partition()) -> new OffsetAndMetadata(m.offset() + 1))
           .groupBy(_._1)
           .map { case (tp, offsets) =>
             tp -> offsets.map(_._2).maxBy(_.offset())
