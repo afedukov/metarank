@@ -40,17 +40,23 @@ case class KafkaSource(conf: KafkaInputConfig) extends EventSource with Logging 
             Some(Chunk.from(messages.events), cons)
           }
         )
-        .flatMap { record =>
-          val parsed = Stream
-            .emits(record)
-            .through(conf.format.parse)
-            .handleErrorWith { err =>
-              // If parse fails (bad JSON), skip this record and continue. Stream will not die.
-              Stream.eval(
-                warn(s"Parse error in record, skipping: ${err.getClass.getSimpleName}: ${err.getMessage}")
-              ) >> Stream.empty
-            }
-          // Commit offsets for this poll batch regardless of parse result (poison pill protection)
+        .chunks // Restore chunk boundaries (one chunk = one poll batch)
+        .flatMap { ch =>
+          val parsed =
+            Stream
+              .chunk(ch) // ch: Chunk[Array[Byte]] from poll
+              .flatMap { rec =>
+                Stream
+                  .emits(rec)
+                  .through(conf.format.parse)
+                  .handleErrorWith { err =>
+                    // If parse fails (bad JSON), skip this record and continue. Stream will not die.
+                    Stream.eval(
+                      warn(s"Parse error in record, skipping: ${err.getClass.getSimpleName}: ${err.getMessage}")
+                    ) >> Stream.empty
+                  }
+              }
+          // Commit offsets after processing ENTIRE poll batch (poison pill protection + no early commit)
           parsed.onFinalizeWeak(consumer.commitPending())
         }
     )
