@@ -202,7 +202,7 @@ object KafkaSource {
       } yield {
         val events = messages.asScala.map(_.value()).toList
         val offsets = messages.asScala
-          .map(m => new TopicPartition(m.topic(), m.partition()) -> new OffsetAndMetadata(m.offset()))
+          .map(m => new TopicPartition(m.topic(), m.partition()) -> new OffsetAndMetadata(m.offset() + 1))
           .groupBy(_._1)
           .map { case (tp, offsets) =>
             tp -> offsets.map(_._2).maxBy(_.offset())
