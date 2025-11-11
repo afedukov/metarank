@@ -16,3 +16,4 @@ api/target
 *.key
 *.csr
 src/test/scala/ai/metarank/tool/esci
+.claude
