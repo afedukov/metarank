@@ -41,7 +41,7 @@ case class KafkaSource(conf: KafkaInputConfig) extends EventSource with Logging 
           }
         )
         .flatMap { record =>
-          Stream
+          val parsed = Stream
             .emits(record)
             .through(conf.format.parse)
             .handleErrorWith { err =>
@@ -50,8 +50,9 @@ case class KafkaSource(conf: KafkaInputConfig) extends EventSource with Logging 
                 warn(s"Parse error in record, skipping: ${err.getClass.getSimpleName}: ${err.getMessage}")
               ) >> Stream.empty
             }
+          // Commit offsets for this poll batch regardless of parse result (poison pill protection)
+          parsed.onFinalizeWeak(consumer.commitPending())
         }
-        .evalTapChunk(_ => consumer.commitPending()) // Commit after successful chunk processing
     )
 }
 
@@ -91,9 +92,14 @@ object KafkaSource {
     def commitPendingSync(): Unit = {
       val offsets = pendingOffsets.getAndSet(Map.empty)
       if (offsets.nonEmpty) {
-        logger.info(s"rebalance: committing ${offsets.size} partition offsets synchronously")
-        client.commitSync(offsets.asJava, KAFKA_TIMEOUT)
-        logger.info("rebalance: commit completed")
+        try {
+          logger.info(s"rebalance: committing ${offsets.size} partition offsets synchronously")
+          client.commitSync(offsets.asJava, KAFKA_TIMEOUT)
+          logger.info("rebalance: commit completed")
+        } catch {
+          case e: Exception =>
+            logger.error(s"rebalance: commitSync failed: ${e.getMessage}", e)
+        }
       }
     }
   }
