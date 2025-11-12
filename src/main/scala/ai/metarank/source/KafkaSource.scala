@@ -28,7 +28,7 @@ case class KafkaSource(conf: KafkaInputConfig) extends EventSource with Logging 
   val POLL_FREQUENCY = Duration.ofMillis(100)
   override def stream: Stream[IO, Event] = Stream
     .bracket(Consumer.create(conf))(consumer =>
-      IO(consumer.commitPendingSync()) *> consumer.close() // Synchronous commit on shutdown for reliability
+      IO.blocking(consumer.commitPendingSync()) *> consumer.close() // Blocking commit on shutdown
     )
     .flatMap(consumer =>
       Stream
