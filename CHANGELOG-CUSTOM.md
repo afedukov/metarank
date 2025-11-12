@@ -17,7 +17,7 @@ Kafka consumer permanently stopped consuming events when Redis restarted. Offset
 ### Solution
 * **Delayed offset commit**: Offsets now committed only after successful processing and Redis write (chunk-level commit after entire poll batch processed)
 * **Supervisor pattern**: Automatic stream restart with exponential backoff (5s, 10s, ..., max 60s) on failures
-* **Poison pill protection**: Bad JSON records skipped without stopping stream (using `Stream.exec` to ensure offset commit after each poll batch)
+* **Poison pill protection**: Bad JSON records skipped without stopping stream (using `onFinalizeWeak` to ensure offset commit after each poll batch, safe even on stream cancellation)
 * **Rebalance safety**: Synchronous offset commit during partition rebalance with try/catch protection
 * **Kafka offset semantics**: Commit offset+1 (next message to read) following Kafka best practices
 * **Graceful shutdown**: Kubernetes `terminationGracePeriodSeconds` and `preStop` hook for proper cleanup

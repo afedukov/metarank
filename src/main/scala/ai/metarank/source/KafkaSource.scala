@@ -28,7 +28,7 @@ case class KafkaSource(conf: KafkaInputConfig) extends EventSource with Logging 
   val POLL_FREQUENCY = Duration.ofMillis(100)
   override def stream: Stream[IO, Event] = Stream
     .bracket(Consumer.create(conf))(consumer =>
-      consumer.commitPending() *> consumer.close() // Commit any pending offsets before closing
+      IO(consumer.commitPendingSync()) *> consumer.close() // Synchronous commit on shutdown for reliability
     )
     .flatMap(consumer =>
       Stream
@@ -54,7 +54,8 @@ case class KafkaSource(conf: KafkaInputConfig) extends EventSource with Logging 
                     warn(s"Parse error in record, skipping: ${err.getClass.getSimpleName}: ${err.getMessage}")
                   ) >> Stream.empty
                 }
-            } ++ Stream.exec(consumer.commitPending()) // Commit after emitting all events from this poll batch
+            }
+            .onFinalizeWeak(consumer.commitPending()) // Commit after processing entire poll batch
         }
     )
 }
@@ -71,7 +72,7 @@ object KafkaSource {
 
     def accumulateOffsets(offsets: Map[TopicPartition, OffsetAndMetadata]): IO[Unit] =
       if (offsets.nonEmpty) {
-        info(s"accumulating ${offsets.size} partition offsets") *> IO {
+        IO {
           var current = pendingOffsets.get()
           while (!pendingOffsets.compareAndSet(current, current ++ offsets)) {
             current = pendingOffsets.get()
