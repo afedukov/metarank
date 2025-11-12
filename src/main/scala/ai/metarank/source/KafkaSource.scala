@@ -28,7 +28,7 @@ case class KafkaSource(conf: KafkaInputConfig) extends EventSource with Logging 
   val POLL_FREQUENCY = Duration.ofMillis(100)
   override def stream: Stream[IO, Event] = Stream
     .bracket(Consumer.create(conf))(consumer =>
-      consumer.commitPending() *> consumer.close() // Commit any pending offsets before closing
+      IO(consumer.commitPendingSync()) *> consumer.close() // Synchronous commit on shutdown for reliability
     )
     .flatMap(consumer =>
       Stream
@@ -42,22 +42,20 @@ case class KafkaSource(conf: KafkaInputConfig) extends EventSource with Logging 
         )
         .chunks // Restore chunk boundaries (one chunk = one poll batch)
         .flatMap { ch =>
-          val parsed =
-            Stream
-              .chunk(ch) // ch: Chunk[Array[Byte]] from poll
-              .flatMap { rec =>
-                Stream
-                  .emits(rec)
-                  .through(conf.format.parse)
-                  .handleErrorWith { err =>
-                    // If parse fails (bad JSON), skip this record and continue. Stream will not die.
-                    Stream.eval(
-                      warn(s"Parse error in record, skipping: ${err.getClass.getSimpleName}: ${err.getMessage}")
-                    ) >> Stream.empty
-                  }
-              }
-          // Commit offsets after processing ENTIRE poll batch (poison pill protection + no early commit)
-          parsed.onFinalizeWeak(consumer.commitPending())
+          Stream
+            .chunk(ch) // ch: Chunk[Array[Byte]] from poll
+            .flatMap { rec =>
+              Stream
+                .emits(rec)
+                .through(conf.format.parse)
+                .handleErrorWith { err =>
+                  // If parse fails (bad JSON), skip this record and continue. Stream will not die.
+                  Stream.eval(
+                    warn(s"Parse error in record, skipping: ${err.getClass.getSimpleName}: ${err.getMessage}")
+                  ) >> Stream.empty
+                }
+            }
+            .onFinalizeWeak(consumer.commitPending()) // Commit after processing entire poll batch
         }
     )
 }
