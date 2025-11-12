@@ -85,7 +85,7 @@ object KafkaSource {
       offsets <- IO(pendingOffsets.getAndSet(Map.empty))
       _ <- if (offsets.nonEmpty) {
         client.commit(offsets) *>
-          info(s"committed ${offsets.size} partition offsets after successful processing")
+          debug(s"committed ${offsets.size} partition offsets after successful processing")
       } else {
         IO.unit
       }
