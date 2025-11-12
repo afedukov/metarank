@@ -54,8 +54,7 @@ case class KafkaSource(conf: KafkaInputConfig) extends EventSource with Logging 
                     warn(s"Parse error in record, skipping: ${err.getClass.getSimpleName}: ${err.getMessage}")
                   ) >> Stream.empty
                 }
-            }
-            .onFinalizeWeak(consumer.commitPending()) // Commit after processing entire poll batch
+            } ++ Stream.exec(consumer.commitPending()) // Explicit commit after processing entire poll batch
         }
     )
 }
