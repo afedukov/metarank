@@ -329,29 +329,50 @@ case class RateFeature(schema: RateFeatureSchema) extends ItemFeature with Loggi
         }
         result.getOrElse(VectorValue.missing(schema.name, dim))
       case Some(norm) =>
-        val result = for {
-          targetScope       <- targetScopeOption
-          topValue          <- features.get(Key(targetScope, topTarget.name))
-          bottomValue       <- features.get(Key(targetScope, bottomTarget.name))
-          topGlobalValue    <- features.get(Key(GlobalScope, topGlobal.name))
-          bottomGlobalValue <- features.get(Key(GlobalScope, bottomGlobal.name))
-          topNum            <- topValue.cast[PeriodicCounterValue] if topNum.values.length == dim.dim
-          bottomNum         <- bottomValue.cast[PeriodicCounterValue] if bottomNum.values.length == dim.dim
-          topGlobalNum      <- topGlobalValue.cast[PeriodicCounterValue] if topGlobalNum.values.length == dim.dim
-          bottomGlobalNum   <- bottomGlobalValue.cast[PeriodicCounterValue] if bottomGlobalNum.values.length == dim.dim
-        } yield {
-          val values = new Array[Double](dim.dim)
-          var i      = 0
-          while (i < dim.dim) {
-            values(i) = (norm.weight + topNum.values(i).value) / (norm.weight * (bottomGlobalNum
-              .values(i)
-              .value / topGlobalNum.values(i).value) + bottomNum.values(i).value)
-            i += 1
-          }
+        targetScopeOption match {
+          case Some(targetScope) =>
+            // Global counters are REQUIRED for normalization
+            val globalResult = for {
+              topGlobalValue    <- features.get(Key(GlobalScope, topGlobal.name))
+              bottomGlobalValue <- features.get(Key(GlobalScope, bottomGlobal.name))
+              topGlobalNum      <- topGlobalValue.cast[PeriodicCounterValue] if topGlobalNum.values.length == dim.dim
+              bottomGlobalNum   <- bottomGlobalValue.cast[PeriodicCounterValue] if bottomGlobalNum.values.length == dim.dim
+            } yield {
+              // Item-level counters are OPTIONAL - use 0 if missing (cold start handling)
+              val topNumOpt = features
+                .get(Key(targetScope, topTarget.name))
+                .flatMap(_.cast[PeriodicCounterValue])
+                .filter(_.values.length == dim.dim)
+              val bottomNumOpt = features
+                .get(Key(targetScope, bottomTarget.name))
+                .flatMap(_.cast[PeriodicCounterValue])
+                .filter(_.values.length == dim.dim)
 
-          VectorValue(schema.name, values, dim)
+              val values = new Array[Double](dim.dim)
+              var i      = 0
+              while (i < dim.dim) {
+                val itemClicks        = topNumOpt.map(_.values(i).value.toDouble).getOrElse(0.0)
+                val itemImpressions   = bottomNumOpt.map(_.values(i).value.toDouble).getOrElse(0.0)
+                val globalClicks      = topGlobalNum.values(i).value.toDouble
+                val globalImpressions = bottomGlobalNum.values(i).value.toDouble
+
+                // Safety: avoid division by zero when globalClicks = 0 (cold start scenario)
+                if (globalClicks > 0.0) {
+                  val globalRate = globalImpressions / globalClicks
+                  values(i) = (norm.weight + itemClicks) / (norm.weight * globalRate + itemImpressions)
+                } else {
+                  // Fallback: no global statistics available, return NaN
+                  values(i) = Double.NaN
+                }
+                i += 1
+              }
+
+              VectorValue(schema.name, values, dim)
+            }
+            globalResult.getOrElse(VectorValue.missing(schema.name, dim))
+          case None =>
+            VectorValue.missing(schema.name, dim)
         }
-        result.getOrElse(VectorValue.missing(schema.name, dim))
     }
   }
 }

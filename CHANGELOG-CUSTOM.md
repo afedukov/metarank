@@ -9,6 +9,38 @@ For upstream Metarank changes, see [CHANGELOG.md](CHANGELOG.md) or the [official
 
 ---
 
+## 0.7.14-custom (2025-12-10)
+
+### Problem
+Products with zero impressions (cold start) received `NaN` for all rate features (CTR, cart_rate, purchase_rate), causing ML model to rank them extremely low regardless of other signals like exact brand match. This created a "chicken and egg" problem: no impressions → no CTR data → low rank → no impressions → endless cycle. New products or products from small sellers were effectively invisible in search results even when they perfectly matched user queries.
+
+### Solution
+* **Cold start handling for rate features**: Item-level counters (clicks/impressions) are now optional when normalization is enabled - missing counters default to 0 instead of causing `NaN`
+* **Fallback to global CTR**: Products without historical data now receive global average CTR calculated from global counters: `(weight + 0) / (weight * globalRate + 0)`
+* **Division by zero protection**: Added safety check `if (globalClicks > 0.0)` to handle edge case when global statistics are not yet available (cold start scenario)
+* **Preserved existing behavior**: Products with historical data continue using the same normalization formula; only products with missing item-level counters are affected
+
+### Result
+New products and products without impressions now start with reasonable baseline CTR (global average) instead of `NaN`, giving them a fair chance to be shown and accumulate real engagement data. This solves the cold start problem for rate-based features while maintaining accurate ranking for products with sufficient historical data.
+
+### Technical Details
+**Formula** (with normalization enabled):
+```
+item_ctr = (weight + itemClicks) / (weight * (globalImpressions / globalClicks) + itemImpressions)
+
+When itemClicks = 0 and itemImpressions = 0:
+item_ctr = weight / (weight * globalRate) = globalCTR
+```
+
+**Example** (Spain production data, 90d period):
+- Global: 453,937 clicks / 980,642 impressions = 46.29% CTR
+- New product: (50 + 0) / (50 * 2.160 + 0) = 46.29% CTR (global average)
+- Product with data: uses standard normalized formula (unchanged)
+
+Files changed: `RateFeature.scala`
+
+---
+
 ## 0.7.13-custom (2025-11-12)
 
 ### Problem
