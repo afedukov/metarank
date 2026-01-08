@@ -74,4 +74,67 @@ class FieldMatchBiencoderFeatureTest extends AnyFlatSpec with Matchers with Feat
     result(1) shouldBe 0.6511 +- 0.001
     result(2) shouldBe 0.2450 +- 0.001
   }
+
+  it should "skip similarity calculation for brand queries when skipOnBrandQuery is enabled" in {
+    import ai.metarank.model.Field.BooleanField
+    val schemaWithSkip = schema.copy(skipOnBrandQuery = true)
+    val item2 = itemEvent.copy(item = ItemId("p2"), fields = List(StringField("title", "red socks")))
+    val item3 = itemEvent.copy(item = ItemId("p3"), fields = List(StringField("title", "green socks")))
+    val item4 = itemEvent.copy(item = ItemId("p4"), fields = List(StringField("title", "your mom")))
+    val rankingEvent = TestRankingEvent(List("p2", "p3", "p4")).copy(
+      fields = List(
+        StringField("query", "santa socks"),
+        BooleanField("is_brand_query", true)
+      )
+    )
+    val result = process(
+      List(item2, item3, item4),
+      schemaWithSkip,
+      rankingEvent
+    )
+    result.flatten.foreach {
+      case SingleValue(name, value) => value.isNaN shouldBe true
+      case _                        => fail("Expected SingleValue with NaN")
+    }
+  }
+
+  it should "calculate similarity normally when is_brand_query is false" in {
+    import ai.metarank.model.Field.BooleanField
+    val schemaWithSkip = schema.copy(skipOnBrandQuery = true)
+    val item2 = itemEvent.copy(item = ItemId("p2"), fields = List(StringField("title", "red socks")))
+    val item3 = itemEvent.copy(item = ItemId("p3"), fields = List(StringField("title", "green socks")))
+    val item4 = itemEvent.copy(item = ItemId("p4"), fields = List(StringField("title", "your mom")))
+    val rankingEvent = TestRankingEvent(List("p2", "p3", "p4")).copy(
+      fields = List(
+        StringField("query", "santa socks"),
+        BooleanField("is_brand_query", false)
+      )
+    )
+    val result = process(
+      List(item2, item3, item4),
+      schemaWithSkip,
+      rankingEvent
+    ).flatten.collect { case SingleValue(name, value) => value }.toArray
+    result(0) shouldBe 0.7093 +- 0.001
+    result(1) shouldBe 0.6511 +- 0.001
+    result(2) shouldBe 0.2450 +- 0.001
+  }
+
+  it should "calculate similarity normally when is_brand_query is missing" in {
+    val schemaWithSkip = schema.copy(skipOnBrandQuery = true)
+    val item2 = itemEvent.copy(item = ItemId("p2"), fields = List(StringField("title", "red socks")))
+    val item3 = itemEvent.copy(item = ItemId("p3"), fields = List(StringField("title", "green socks")))
+    val item4 = itemEvent.copy(item = ItemId("p4"), fields = List(StringField("title", "your mom")))
+    val rankingEvent = TestRankingEvent(List("p2", "p3", "p4")).copy(
+      fields = List(StringField("query", "santa socks"))
+    )
+    val result = process(
+      List(item2, item3, item4),
+      schemaWithSkip,
+      rankingEvent
+    ).flatten.collect { case SingleValue(name, value) => value }.toArray
+    result(0) shouldBe 0.7093 +- 0.001
+    result(1) shouldBe 0.6511 +- 0.001
+    result(2) shouldBe 0.2450 +- 0.001
+  }
 }

@@ -9,6 +9,58 @@ For upstream Metarank changes, see [CHANGELOG.md](CHANGELOG.md) or the [official
 
 ---
 
+## 0.7.15-custom (2026-01-08)
+
+### Problem
+
+When users search for brand names (e.g., "apple", "samsung"), image similarity features can introduce noise and reduce ranking accuracy. Visual similarity between product images is not relevant when the search intent is to find products from a specific brand - brand matching should take priority over visual appearance.
+
+### Solution
+
+Added `skipOnBrandQuery` parameter to `field_match` bi-encoder features. When enabled, the feature checks for an `is_brand_query` boolean field in ranking events. If the flag is set to `true`, the feature returns missing values instead of computing similarity scores, effectively excluding image-based features from brand query ranking.
+
+**Configuration example**:
+```yaml
+- name: query_item_image_cos
+  type: field_match
+  rankingField: ranking.embedding
+  itemField: item.image_embedding
+  distance: cos
+  preencoded: true
+  skipOnBrandQuery: true  # Skip this feature for brand queries
+  ttl: 90d
+  method:
+    type: bi-encoder
+    dim: 512
+```
+
+**Ranking event example**:
+```json
+{
+  "event": "ranking",
+  "id": "81f46c34-a4bb-469c-8708-f8127cd67d27",
+  "timestamp": "1599391467000",
+  "user": "user_1",
+  "session": "session_1",
+  "fields": [
+    {"name": "query", "value": "apple"},
+    {"name": "is_brand_query", "value": true}
+  ],
+  "items": [
+    {"id": "item_1"},
+    {"id": "item_2"}
+  ]
+}
+```
+
+### Result
+
+Image-based similarity features can now be conditionally disabled for brand queries, improving ranking accuracy by reducing noise from irrelevant visual signals. The feature remains backwards compatible - when `skipOnBrandQuery` is `false` (default) or `is_brand_query` field is missing/false, similarity calculation works normally.
+
+Files changed: `FieldMatchBiencoderFeature.scala`, `FieldMatchBiencoderFeatureTest.scala`
+
+---
+
 ## 0.7.14-custom (2025-12-10)
 
 ### Problem

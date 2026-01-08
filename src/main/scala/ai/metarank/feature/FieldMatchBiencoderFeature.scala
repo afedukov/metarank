@@ -89,30 +89,41 @@ case class FieldMatchBiencoderFeature(
       features: Map[Key, FeatureValue],
       mode: BaseFeature.ValueMode
   ): List[MValue] = {
-    val queryEmbeddingOption = request.fieldsMap.get(schema.rankingField.field) match {
-      case Some(f) if schema.preencoded =>
-        f match {
-          case Field.ScalarField(_, SDoubleList(vec)) => Some(vec.map(_.toFloat))
-          case _                                      => None
-        }
-      case Some(StringField(_, value)) if !schema.preencoded =>
-        rankingCache.get(value).orElse(encoder.flatMap(_.embed(Array(value)).headOption))
-      case Some(StringListField(_, value)) if !schema.preencoded =>
-        val txt = value.mkString(" ")
-        rankingCache.get(txt).orElse(encoder.flatMap(_.embed(Array(txt)).headOption))
-      case _ => None
+    // Check if brand query flag is set and feature should be skipped
+    val isBrandQuery = schema.skipOnBrandQuery && request.fields.exists {
+      case Field.BooleanField("is_brand_query", value) => value
+      case _                                           => false
     }
-    queryEmbeddingOption match {
-      case None => request.items.toList.map(_ => SingleValue.missing(schema.name))
-      case Some(queryEmbedding) =>
-        val raw = request.items.toList.map(item => {
-          features.get(Key(ItemScope(item.id), conf.name)) match {
-            case Some(ScalarValue(_, ts, SDoubleList(emb), _)) =>
-              MValue(schema.name.value, schema.distance.dist(queryEmbedding, emb.map(_.toFloat)))
-            case _ => SingleValue.missing(schema.name)
+
+    if (isBrandQuery) {
+      // Skip similarity calculation for brand queries
+      request.items.toList.map(_ => SingleValue.missing(schema.name))
+    } else {
+      val queryEmbeddingOption = request.fieldsMap.get(schema.rankingField.field) match {
+        case Some(f) if schema.preencoded =>
+          f match {
+            case Field.ScalarField(_, SDoubleList(vec)) => Some(vec.map(_.toFloat))
+            case _                                      => None
           }
-        })
-        schema.norm.scale(raw)
+        case Some(StringField(_, value)) if !schema.preencoded =>
+          rankingCache.get(value).orElse(encoder.flatMap(_.embed(Array(value)).headOption))
+        case Some(StringListField(_, value)) if !schema.preencoded =>
+          val txt = value.mkString(" ")
+          rankingCache.get(txt).orElse(encoder.flatMap(_.embed(Array(txt)).headOption))
+        case _ => None
+      }
+      queryEmbeddingOption match {
+        case None => request.items.toList.map(_ => SingleValue.missing(schema.name))
+        case Some(queryEmbedding) =>
+          val raw = request.items.toList.map(item => {
+            features.get(Key(ItemScope(item.id), conf.name)) match {
+              case Some(ScalarValue(_, ts, SDoubleList(emb), _)) =>
+                MValue(schema.name.value, schema.distance.dist(queryEmbedding, emb.map(_.toFloat)))
+              case _ => SingleValue.missing(schema.name)
+            }
+          })
+          schema.norm.scale(raw)
+      }
     }
   }
 }
@@ -128,7 +139,8 @@ object FieldMatchBiencoderFeature extends Logging {
       norm: Normalize = NoopNormalize,
       refresh: Option[FiniteDuration] = None,
       ttl: Option[FiniteDuration] = None,
-      preencoded: Boolean = false
+      preencoded: Boolean = false,
+      skipOnBrandQuery: Boolean = false
   ) extends FeatureSchema {
     lazy val scope: ScopeType = ItemScopeType
 
@@ -168,12 +180,13 @@ object FieldMatchBiencoderFeature extends Logging {
           case ok @ FieldName(Item, _) => Right(ok)
           case other                   => Left(DecodingFailure(s"expected item field, but got $other", c.history))
         }
-        method     <- c.downField("method").as[BiEncoderConfig]
-        distance   <- c.downField("distance").as[Option[DistanceFunction]]
-        refresh    <- c.downField("refresh").as[Option[FiniteDuration]]
-        ttl        <- c.downField("ttl").as[Option[FiniteDuration]]
-        norm       <- c.downField("norm").as[Option[Normalize]]
-        preencoded <- c.downField("preencoded").as[Option[Boolean]]
+        method            <- c.downField("method").as[BiEncoderConfig]
+        distance          <- c.downField("distance").as[Option[DistanceFunction]]
+        refresh           <- c.downField("refresh").as[Option[FiniteDuration]]
+        ttl               <- c.downField("ttl").as[Option[FiniteDuration]]
+        norm              <- c.downField("norm").as[Option[Normalize]]
+        preencoded        <- c.downField("preencoded").as[Option[Boolean]]
+        skipOnBrandQuery  <- c.downField("skipOnBrandQuery").as[Option[Boolean]]
       } yield {
         FieldMatchBiencoderSchema(
           name = name,
@@ -184,7 +197,8 @@ object FieldMatchBiencoderFeature extends Logging {
           refresh = refresh,
           ttl = ttl,
           norm = norm.getOrElse(NoopNormalize),
-          preencoded = preencoded.getOrElse(false)
+          preencoded = preencoded.getOrElse(false),
+          skipOnBrandQuery = skipOnBrandQuery.getOrElse(false)
         )
       }
     )
